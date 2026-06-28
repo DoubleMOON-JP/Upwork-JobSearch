@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: upwork-jobsearch
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    customDomains:
+      - upwork.doublemoon.biz
+    envVars:
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: ADMIN_USER
+        value: admin
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: BASE_URL
+        value: https://upwork.doublemoon.biz
