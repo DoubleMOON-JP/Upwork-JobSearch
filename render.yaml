@@ -8,8 +8,6 @@ services:
     customDomains:
       - upwork.doublemoon.biz
     envVars:
-      - key: GEMINI_MODEL
-        value: gemini-2.5-flash
       - key: ADMIN_USER
         value: admin
       - key: ADMIN_PASSWORD
