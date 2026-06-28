@@ -1,3 +1,9 @@
+databases:
+  - name: upwork-jobsearch-db
+    plan: basic-256mb
+    databaseName: upwork_jobsearch
+    user: upwork_jobsearch_user
+
 services:
   - type: web
     name: upwork-jobsearch
@@ -14,3 +20,7 @@ services:
         generateValue: true
       - key: BASE_URL
         value: https://upwork.doublemoon.biz
+      - key: DATABASE_URL
+        fromDatabase:
+          name: upwork-jobsearch-db
+          property: connectionString
