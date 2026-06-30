@@ -123,11 +123,11 @@ async def get_version(component: str):
 @app.get("/mypage", response_class=HTMLResponse)
 async def mypage():
     html = """<!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Upwork JobSearch - マイページ</title>
+  <title>Upwork JobSearch - My Page</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Arial, sans-serif; background: #F5F7FA; color: #1A1A1A; }
@@ -169,44 +169,44 @@ async def mypage():
 <body>
 <div class="header">
   <h1>⚡ Upwork JobSearch</h1>
-  <p>マイページ — ライセンス確認・ファイルダウンロード</p>
+  <p>My Page — License Check &amp; File Downloads</p>
 </div>
 
 <div class="container">
 
   <div class="card">
-    <h2>🔑 ライセンス確認</h2>
+    <h2>🔑 License Check</h2>
     <div class="form-row">
-      <label>ライセンスキー</label>
+      <label>License Key</label>
       <input type="text" id="lic-key" placeholder="UPWK-XXXX-XXXX-XXXX">
     </div>
-    <button class="btn btn-primary" onclick="checkLicense()">確認する</button>
+    <button class="btn btn-primary" onclick="checkLicense()">Check</button>
     <div id="lic-result" class="result-box"></div>
   </div>
 
   <div class="card">
-    <h2>📥 ファイルダウンロード</h2>
+    <h2>📥 File Downloads</h2>
     <p style="font-size:12px;color:#777;margin-bottom:14px">
-      ライセンス確認後、以下のボタンからファイルをダウンロードしてください。
+      After confirming your license, please download the files using the buttons below.
     </p>
     <a href="/download/excel" class="dl-btn dl-excel">
-      📊 Excelファイルをダウンロード（.xlsm）
+      📊 Download Excel File (.xlsm)
     </a>
     <a href="/download/extension" class="dl-btn dl-ext">
-      🧩 Chromeエクステンションをダウンロード（.zip）
+      🧩 Download Chrome Extension (.zip)
     </a>
   </div>
 
   <div class="card">
-    <h2>📖 セットアップ手順</h2>
+    <h2>📖 Setup Instructions</h2>
     <ol style="font-size:13px;line-height:2;padding-left:20px;color:#333">
-      <li>Excelファイルをダウンロードして開く</li>
-      <li>設定シートにライセンスキーとGemini APIキーを入力</li>
-      <li>プロフィールシートにスキル・時給等を入力</li>
-      <li>Chromeエクステンションをダウンロード・インストール</li>
-      <li>Excelのホームシートでキーワードを入力して「検索開始」ボタンを押す</li>
-      <li>Chromeのエクステンションで「AI評価を実行」ボタンを押す</li>
-      <li>ExcelでCSVを取り込んで結果を確認</li>
+      <li>Download and open the Excel file</li>
+      <li>Enter your license key and Gemini API key in the Settings sheet</li>
+      <li>Enter your skills, hourly rate, etc. in the Profile sheet</li>
+      <li>Download and install the Chrome extension</li>
+      <li>Enter keywords on the Excel Home sheet and click "Start Search"</li>
+      <li>Click "Run AI Evaluation" in the Chrome extension</li>
+      <li>Import the CSV in Excel to view the results</li>
     </ol>
   </div>
 
@@ -217,12 +217,12 @@ async def mypage():
 <script>
 async function checkLicense() {
   const key = document.getElementById('lic-key').value.trim();
-  if (!key) { alert('ライセンスキーを入力してください'); return; }
+  if (!key) { alert('Please enter your license key'); return; }
 
   const box = document.getElementById('lic-result');
   box.style.display = 'block';
   box.className = 'result-box';
-  box.innerHTML = '確認中...';
+  box.innerHTML = 'Checking...';
 
   try {
     const res = await fetch('/license/validate', {
@@ -238,18 +238,18 @@ async function checkLicense() {
       box.className = 'result-box ok';
       box.innerHTML =
         '<div style="font-weight:bold;margin-bottom:8px">' +
-        '✅ ライセンス有効 <span class="badge">' + lic.days_left + '日残り</span></div>' +
-        '<div class="row-item"><span class="row-label">プラン</span><span class="row-value">' + lic.plan + '</span></div>' +
-        '<div class="row-item"><span class="row-label">有効期限</span><span class="row-value">' + lic.expires_at + '</span></div>' +
-        '<div class="row-item"><span class="row-label">最新エクステンション</span><span class="row-value">v' + ver.extension + '</span></div>' +
-        '<div class="row-item"><span class="row-label">最新Excelファイル</span><span class="row-value">v' + ver.excel + '</span></div>';
+        '✅ License Valid <span class="badge">' + lic.days_left + ' days left</span></div>' +
+        '<div class="row-item"><span class="row-label">Plan</span><span class="row-value">' + lic.plan + '</span></div>' +
+        '<div class="row-item"><span class="row-label">Expires On</span><span class="row-value">' + lic.expires_at + '</span></div>' +
+        '<div class="row-item"><span class="row-label">Latest Extension</span><span class="row-value">v' + ver.extension + '</span></div>' +
+        '<div class="row-item"><span class="row-label">Latest Excel File</span><span class="row-value">v' + ver.excel + '</span></div>';
     } else {
       box.className = 'result-box error';
-      box.innerHTML = '❌ ' + (data.message || '無効なライセンスキーです');
+      box.innerHTML = '❌ ' + (data.message || 'Invalid license key');
     }
   } catch(e) {
     box.className = 'result-box error';
-    box.innerHTML = '❌ サーバーに接続できませんでした';
+    box.innerHTML = '❌ Could not connect to the server';
   }
 }
 </script>
