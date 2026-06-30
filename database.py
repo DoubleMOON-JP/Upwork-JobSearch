@@ -125,43 +125,43 @@ def _seed_initial_data():
             # プロンプトの初期データ
             cur.execute("SELECT COUNT(*) FROM prompts")
             if cur.fetchone()[0] == 0:
-                default_prompt = """あなたはフリーランサーの案件評価アシスタントです。
-以下のフリーランサープロフィールに基づいて各案件を0〜100点でスコアリングしてください。
+                default_prompt = """You are an assistant that evaluates Upwork jobs for a freelancer.
+Score each job from 0 to 100 based on the freelancer profile below.
 
-【フリーランサープロフィール】
-スキル: {skills}
-得意カテゴリ: {category}
-希望最低時給: {min_rate}{exclude_line}{prefer_line}{ai_request_line}
+[Freelancer Profile]
+Skills: {skills}
+Preferred categories: {category}
+Minimum desired rate: {min_rate}{exclude_line}{prefer_line}{ai_request_line}
 
-【評価基準】
-- スキルの一致度（高いほど高得点）
-- 予算・時給が希望最低時給以上か
-- 避けたいキーワードが含まれる場合は大幅減点
-- 優先したいキーワードが含まれる場合は加点
-- ユーザーからのAIへの要望が指定されている場合は、その内容を最優先で考慮する
+[Evaluation criteria]
+- Skill match (higher match = higher score)
+- Whether the budget or hourly rate meets or exceeds the minimum desired rate
+- Apply a large penalty when a "keyword to avoid" appears in the job
+- Apply a bonus when a "preferred keyword" appears in the job
+- If the user's request to the AI is provided, treat it as the top priority
 
-【評価対象案件】
+[Jobs to evaluate]
 {jobs_text}
 
-【出力形式】
-JSON形式のみで回答してください。
+[Output format]
+Respond ONLY in JSON, with no extra text.
 {{
   "results": [
     {{
       "index": 0,
       "score": 85,
-      "reason": "スコアの理由を1〜2文で日本語で",
-      "recommendation": "応募推奨"
+      "reason": "Briefly explain the score in 1-2 English sentences",
+      "recommendation": "Apply"
     }}
   ]
 }}
-recommendationは「応募推奨」「様子見」「スキップ」のいずれか。
-resultsの件数は評価対象案件と同じ件数にすること。"""
+"recommendation" must be exactly one of: "Apply", "Maybe", "Skip".
+The number of items in "results" must equal the number of jobs provided."""
 
                 cur.execute(
                     """INSERT INTO prompts (version, name, template, is_active, note)
                        VALUES (%s, %s, %s, 1, %s)""",
-                    ('v1.0', 'Upwork案件評価プロンプト v1.0', default_prompt, '初回リリース版')
+                    ('v1.0', 'Upwork Job Evaluation Prompt v1.0', default_prompt, 'Initial release')
                 )
 
             # セレクター定義
