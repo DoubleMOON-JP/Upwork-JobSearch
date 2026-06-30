@@ -88,6 +88,19 @@ def init_db():
                     release_note  TEXT,
                     released_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS files (
+                    id            SERIAL PRIMARY KEY,
+                    component     TEXT NOT NULL,
+                    filename      TEXT NOT NULL,
+                    content_type  TEXT NOT NULL,
+                    file_data     BYTEA NOT NULL,
+                    version       TEXT NOT NULL,
+                    is_active     INTEGER NOT NULL DEFAULT 0,
+                    uploaded_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    note          TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_files_component ON files(component, is_active);
             """)
 
     _seed_initial_data()
@@ -118,13 +131,14 @@ def _seed_initial_data():
 【フリーランサープロフィール】
 スキル: {skills}
 得意カテゴリ: {category}
-希望最低時給: {min_rate}{exclude_line}{prefer_line}
+希望最低時給: {min_rate}{exclude_line}{prefer_line}{ai_request_line}
 
 【評価基準】
 - スキルの一致度（高いほど高得点）
 - 予算・時給が希望最低時給以上か
 - 避けたいキーワードが含まれる場合は大幅減点
 - 優先したいキーワードが含まれる場合は加点
+- ユーザーからのAIへの要望が指定されている場合は、その内容を最優先で考慮する
 
 【評価対象案件】
 {jobs_text}
@@ -161,7 +175,7 @@ resultsの件数は評価対象案件と同じ件数にすること。"""
                     "skill_class_includes": ["token", "skill"],
                     "url_base":         "https://www.upwork.com",
                     "search_url_base":  "https://www.upwork.com/nx/find-work/best-matches?q=",
-                    "max_jobs":         20,
+                    "max_jobs":         30,
                     "description_min_length": 30,
                     "description_max_length": 300,
                 }
@@ -511,6 +525,103 @@ def get_latest_version(component: str) -> dict:
     if isinstance(result.get('released_at'), datetime):
         result['released_at'] = result['released_at'].isoformat()
     return result
+
+
+# ──────────────────────────────────────────
+# 配布ファイル管理（拡張機能zip／Excelファイル）
+# ──────────────────────────────────────────
+def upload_file(component: str, filename: str, content_type: str,
+                 file_data: bytes, version: str, note: str = '') -> dict:
+    """
+    ファイルをDBに保存し、同時にapp_versionsへバージョンを記録する。
+    保存と同時に同コンポーネントの既存ファイルは非アクティブ化し、
+    今回アップロードしたものをアクティブにする（＝最新版として配信）。
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE files SET is_active = 0 WHERE component = %s",
+                (component,)
+            )
+            cur.execute(
+                """INSERT INTO files (component, filename, content_type, file_data,
+                                      version, is_active, note)
+                   VALUES (%s, %s, %s, %s, %s, 1, %s) RETURNING id""",
+                (component, filename, content_type, psycopg2.Binary(file_data), version, note)
+            )
+            new_id = cur.fetchone()[0]
+            cur.execute(
+                """INSERT INTO app_versions (component, version, release_note)
+                   VALUES (%s, %s, %s)""",
+                (component, version, note)
+            )
+    return {'success': True, 'id': new_id, 'component': component, 'version': version}
+
+
+def get_active_file(component: str) -> dict:
+    """配信用：現在アクティブなファイルの実体を取得する"""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT * FROM files WHERE component = %s AND is_active = 1
+                   ORDER BY uploaded_at DESC LIMIT 1""",
+                (component,)
+            )
+            row = cur.fetchone()
+    if not row:
+        return {}
+    result = dict(row)
+    if isinstance(result.get('uploaded_at'), datetime):
+        result['uploaded_at'] = result['uploaded_at'].isoformat()
+    return result
+
+
+def get_all_files(component: str = None) -> list:
+    """管理画面用：ファイル一覧（バイナリ本体は含めない）"""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            if component:
+                cur.execute(
+                    """SELECT id, component, filename, content_type, version,
+                              is_active, uploaded_at, note
+                       FROM files WHERE component = %s ORDER BY uploaded_at DESC""",
+                    (component,)
+                )
+            else:
+                cur.execute(
+                    """SELECT id, component, filename, content_type, version,
+                              is_active, uploaded_at, note
+                       FROM files ORDER BY component, uploaded_at DESC"""
+                )
+            rows = cur.fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        if isinstance(d.get('uploaded_at'), datetime):
+            d['uploaded_at'] = d['uploaded_at'].isoformat()
+        result.append(d)
+    return result
+
+
+def activate_file(file_id: int) -> dict:
+    """指定ファイルを最新版として有効化（同コンポーネントの他は無効化）"""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT component FROM files WHERE id = %s", (file_id,))
+            row = cur.fetchone()
+            if not row:
+                return {'success': False, 'message': 'ファイルが見つかりません'}
+            component = row['component']
+            cur.execute("UPDATE files SET is_active = 0 WHERE component = %s", (component,))
+            cur.execute("UPDATE files SET is_active = 1 WHERE id = %s", (file_id,))
+    return {'success': True, 'activated_id': file_id}
+
+
+def delete_file(file_id: int) -> dict:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM files WHERE id = %s", (file_id,))
+    return {'success': True}
 
 
 # ──────────────────────────────────────────

@@ -6,9 +6,8 @@ import os
 import json
 import secrets as sec_module
 from datetime import datetime
-from pathlib import Path
 
-from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi import FastAPI, Request, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse, HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -23,6 +22,7 @@ from database import (
     get_excludes, get_all_excludes, add_exclude, delete_exclude,
     get_ai_settings, update_ai_setting,
     get_latest_version,
+    upload_file, get_active_file, get_all_files, activate_file, delete_file,
 )
 
 # ══════════════════════════════════════════
@@ -261,31 +261,32 @@ async function checkLicense() {
 # ══════════════════════════════════════════
 # ファイルダウンロード
 # ══════════════════════════════════════════
+# ══════════════════════════════════════════
+# ファイルダウンロード（DBに保存されたファイルを配信）
+# ══════════════════════════════════════════
 @app.get("/download/excel")
 async def download_excel():
-    path = Path("files/UpworkJobSearch.xlsm")
-    if not path.exists():
+    f = get_active_file("excel")
+    if not f:
         return JSONResponse(status_code=404,
             content={"message": "ファイルが準備中です"})
-    data = path.read_bytes()
     return Response(
-        content=data,
-        media_type="application/vnd.ms-excel.sheet.macroEnabled.12",
-        headers={"Content-Disposition": "attachment; filename=UpworkJobSearch.xlsm"},
+        content=bytes(f["file_data"]),
+        media_type=f["content_type"],
+        headers={"Content-Disposition": f'attachment; filename={f["filename"]}'},
     )
 
 
 @app.get("/download/extension")
 async def download_extension():
-    path = Path("files/upwork_jobsearch_extension.zip")
-    if not path.exists():
+    f = get_active_file("extension")
+    if not f:
         return JSONResponse(status_code=404,
             content={"message": "ファイルが準備中です"})
-    data = path.read_bytes()
     return Response(
-        content=data,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=upwork_jobsearch_extension.zip"},
+        content=bytes(f["file_data"]),
+        media_type=f["content_type"],
+        headers={"Content-Disposition": f'attachment; filename={f["filename"]}'},
     )
 
 
@@ -298,6 +299,7 @@ async def admin_page(username: str = Depends(verify_admin)):
     prompts  = get_all_prompts()
     selectors_all = get_all_selectors('upwork')
     excludes_all  = get_all_excludes()
+    files_all     = get_all_files()
     today = datetime.today().date().isoformat()
 
     # ライセンス一覧
@@ -362,6 +364,26 @@ async def admin_page(username: str = Depends(verify_admin)):
           <td>{e['keyword']}</td>
           <td>
             <button onclick="delExclude({e['id']})"
+              style="font-size:11px;padding:2px 6px;cursor:pointer;color:#843C0C">削除</button>
+          </td>
+        </tr>"""
+
+    # 配布ファイル一覧
+    file_rows = ""
+    for fl in files_all:
+        active_badge = '<span style="background:#E2EFDA;color:#375623;padding:2px 6px;border-radius:3px;font-size:11px">配信中</span>' \
+                       if fl['is_active'] else \
+                       '<button onclick="activateFile(' + str(fl['id']) + ')" style="font-size:11px;padding:2px 6px;cursor:pointer">配信開始</button>'
+        file_rows += f"""
+        <tr>
+          <td>{fl['id']}</td>
+          <td>{fl['component']}</td>
+          <td>{fl['version']}</td>
+          <td style="font-size:11px">{fl['filename']}</td>
+          <td>{active_badge}</td>
+          <td>{fl['uploaded_at'][:10]}</td>
+          <td>
+            <button onclick="delFile({fl['id']})"
               style="font-size:11px;padding:2px 6px;cursor:pointer;color:#843C0C">削除</button>
           </td>
         </tr>"""
@@ -518,6 +540,37 @@ async def admin_page(username: str = Depends(verify_admin)):
     </table>
   </div>
 
+  <!-- 配布ファイル管理 -->
+  <div class="card">
+    <h2>📦 配布ファイル管理（Excel／拡張機能）</h2>
+    <div class="form-row">
+      <label>種類</label>
+      <select id="file-component">
+        <option value="excel">excel（.xlsm）</option>
+        <option value="extension">extension（.zip）</option>
+      </select>
+      <label>バージョン</label>
+      <input type="text" id="file-version" placeholder="1.0.1" style="max-width:120px">
+      <label>備考</label>
+      <input type="text" id="file-note" placeholder="任意" style="min-width:160px">
+    </div>
+    <div class="form-row">
+      <label>ファイル</label>
+      <input type="file" id="file-input" style="flex:1">
+      <button class="btn btn-primary" onclick="uploadFile()">アップロード</button>
+    </div>
+    <p style="font-size:11px;color:#777;margin-top:6px">
+      アップロードすると同じ種類の旧バージョンは自動的に配信停止され、最新版として即時配信されます。
+    </p>
+    <div id="file-msg" class="msg"></div>
+    <table style="margin-top:14px">
+      <thead>
+        <tr><th>ID</th><th>種類</th><th>バージョン</th><th>ファイル名</th><th>状態</th><th>登録日</th><th>操作</th></tr>
+      </thead>
+      <tbody>{file_rows}</tbody>
+    </table>
+  </div>
+
 </div>
 
 <script>
@@ -597,6 +650,57 @@ async function addExclude() {{
 async function delExclude(id) {{
   if (!confirm('削除しますか？')) return;
   const res = await fetch('/admin/exclude/' + id, {{method: 'DELETE'}});
+  if (res.ok) location.reload();
+  else alert('エラーが発生しました');
+}}
+
+async function uploadFile() {{
+  const component = document.getElementById('file-component').value;
+  const version   = document.getElementById('file-version').value.trim();
+  const note      = document.getElementById('file-note').value.trim();
+  const fileInput = document.getElementById('file-input');
+  const msg       = document.getElementById('file-msg');
+
+  if (!version) {{ alert('バージョンを入力してください'); return; }}
+  if (!fileInput.files.length) {{ alert('ファイルを選択してください'); return; }}
+
+  const formData = new FormData();
+  formData.append('component', component);
+  formData.append('version', version);
+  formData.append('note', note);
+  formData.append('file', fileInput.files[0]);
+
+  msg.className = 'msg';
+  msg.style.display = 'block';
+  msg.textContent = 'アップロード中...';
+
+  try {{
+    const res = await fetch('/admin/file/upload', {{ method: 'POST', body: formData }});
+    const data = await res.json();
+    if (res.ok && data.success) {{
+      msg.className = 'msg ok';
+      msg.innerHTML = '✅ アップロード完了（v' + data.version + '）。即時配信を開始しました。';
+      setTimeout(() => location.reload(), 1200);
+    }} else {{
+      msg.className = 'msg error';
+      msg.textContent = '❌ ' + (data.message || 'アップロードに失敗しました');
+    }}
+  }} catch(e) {{
+    msg.className = 'msg error';
+    msg.textContent = '❌ アップロード中にエラーが発生しました';
+  }}
+}}
+
+async function activateFile(id) {{
+  if (!confirm('このファイルを最新版として配信しますか？')) return;
+  const res = await fetch('/admin/file/' + id + '/activate', {{method: 'POST'}});
+  if (res.ok) location.reload();
+  else alert('エラーが発生しました');
+}}
+
+async function delFile(id) {{
+  if (!confirm('削除しますか？')) return;
+  const res = await fetch('/admin/file/' + id, {{method: 'DELETE'}});
   if (res.ok) location.reload();
   else alert('エラーが発生しました');
 }}
@@ -694,7 +798,7 @@ textarea {{ min-height: 400px; resize: vertical; }}
 <h1>📝 {title}</h1>
 <div class="placeholder-help">
 利用可能なプレースホルダー: {{skills}}, {{category}}, {{min_rate}}, {{exclude_line}},
-{{prefer_line}}, {{jobs_text}} ※ {{ と }} はテンプレート内では {{{{ と }}}} と書く必要があります
+{{prefer_line}}, {{ai_request_line}}, {{jobs_text}} ※ {{ と }} はテンプレート内では {{{{ と }}}} と書く必要があります
 </div>
 <label>バージョン</label>
 <input type="text" id="p-version" value="{version}" placeholder="v1.0">
@@ -883,3 +987,55 @@ async def admin_add_exclude(request: Request, username: str = Depends(verify_adm
 @app.delete("/admin/exclude/{exclude_id}")
 async def admin_delete_exclude(exclude_id: int, username: str = Depends(verify_admin)):
     return delete_exclude(exclude_id)
+
+
+# ── 配布ファイル管理API ──
+ALLOWED_FILE_COMPONENTS = {
+    "excel":     "application/vnd.ms-excel.sheet.macroEnabled.12",
+    "extension": "application/zip",
+}
+
+
+@app.post("/admin/file/upload")
+async def admin_upload_file(
+    component: str = Form(...),
+    version: str = Form(...),
+    note: str = Form(""),
+    file: UploadFile = File(...),
+    username: str = Depends(verify_admin),
+):
+    if component not in ALLOWED_FILE_COMPONENTS:
+        return JSONResponse(status_code=400,
+            content={"success": False, "message": "componentはexcelまたはextensionのみ指定できます"})
+    if not version.strip():
+        return JSONResponse(status_code=400,
+            content={"success": False, "message": "versionが必要です"})
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        return JSONResponse(status_code=400,
+            content={"success": False, "message": "ファイルが空です"})
+
+    content_type = ALLOWED_FILE_COMPONENTS[component]
+    result = upload_file(
+        component=component,
+        filename=file.filename,
+        content_type=content_type,
+        file_data=file_bytes,
+        version=version.strip(),
+        note=note.strip(),
+    )
+    return result
+
+
+@app.post("/admin/file/{file_id}/activate")
+async def admin_activate_file(file_id: int, username: str = Depends(verify_admin)):
+    result = activate_file(file_id)
+    if not result.get("success"):
+        return JSONResponse(status_code=404, content=result)
+    return result
+
+
+@app.delete("/admin/file/{file_id}")
+async def admin_delete_file(file_id: int, username: str = Depends(verify_admin)):
+    return delete_file(file_id)
