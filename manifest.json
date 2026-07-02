@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Upwork JobSearch",
+  "version": "1.0.2",
+  "description": "A tool that uses AI to score Upwork job listings",
+
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "downloads"
+  ],
+
+  "host_permissions": [
+    "https://www.upwork.com/*",
+    "https://upwork.doublemoon.biz/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png"
+    }
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://www.upwork.com/*"],
+      "js": ["content_script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  }
+}

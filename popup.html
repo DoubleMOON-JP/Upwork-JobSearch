@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      background: #F5F7FA;
+      color: #1A1A1A;
+    }
+
+    .header {
+      background: #1A2B4A;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-title { color: #fff; font-size: 13px; font-weight: 500; flex: 1; }
+    .header-ver   { font-size: 10px; color: rgba(255,255,255,0.45); }
+
+    .body { padding: 14px; }
+
+    .status {
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 12px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      line-height: 1.5;
+      min-height: 44px;
+    }
+    .status-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+    .s-info    { background: #EBF3FB; border: 1px solid #BFCFDF; color: #1F4E79; }
+    .s-working { background: #FFF2CC; border: 1px solid #FFD966; color: #7F6000; }
+    .s-done    { background: #E2EFDA; border: 1px solid #A9D18E; color: #375623; }
+    .s-error   { background: #FCE4D6; border: 1px solid #F4B8A0; color: #843C0C; }
+    .s-warning { background: #FFF2CC; border: 1px solid #FFD966; color: #7F6000; }
+
+    .progress-wrap {
+      background: #E0E0E0;
+      border-radius: 4px;
+      height: 6px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      display: none;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #C55A11, #E07A31);
+      transition: width 0.4s ease;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-primary  { background: #C55A11; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #A04610; }
+    .btn-disabled {
+      background: #F0F0F0;
+      color: #AAAAAA;
+      border: 1px solid #DDDDDD;
+      cursor: not-allowed;
+    }
+
+    .result-summary {
+      background: #FFFFFF;
+      border: 1px solid #BFCFDF;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      display: none;
+    }
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      padding: 3px 0;
+      border-bottom: 1px solid #F0F0F0;
+    }
+    .result-row:last-child { border-bottom: none; }
+    .result-label { color: #777; }
+    .result-value { font-weight: 500; color: #1A1A1A; }
+    .value-ok     { color: #375623 !important; }
+
+    .footer {
+      padding: 7px 14px;
+      border-top: 1px solid #E0E0E0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #FFFFFF;
+    }
+    .footer-lic  { font-size: 10px; color: #375623; }
+    .footer-lic.invalid { color: #843C0C; }
+    .footer-link {
+      font-size: 10px; color: #2E75B6;
+      text-decoration: none; cursor: pointer;
+    }
+    .footer-link:hover { text-decoration: underline; }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(127,96,0,0.3);
+      border-top-color: #7F6000;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <span style="font-size:15px">⚡</span>
+  <span class="header-title">Upwork JobSearch</span>
+  <span class="header-ver">v1.0.2</span>
+</div>
+
+<div class="body">
+
+  <div id="status" class="status s-info">
+    <span class="status-icon">🔵</span>
+    <span id="status-text">Starting...</span>
+  </div>
+
+  <div id="progress-wrap" class="progress-wrap">
+    <div id="progress-fill" class="progress-fill" style="width:0%"></div>
+  </div>
+
+  <div id="result-summary" class="result-summary">
+    <div class="result-row">
+      <span class="result-label">Jobs Found</span>
+      <span id="r-total" class="result-value">-</span>
+    </div>
+    <div class="result-row">
+      <span class="result-label">AI Evaluated</span>
+      <span id="r-evaluated" class="result-value">-</span>
+    </div>
+    <div class="result-row">
+      <span class="result-label">Recommended (above threshold)</span>
+      <span id="r-matched" class="result-value value-ok">-</span>
+    </div>
+    <div class="result-row">
+      <span class="result-label">Time Taken</span>
+      <span id="r-time" class="result-value">-</span>
+    </div>
+    <div class="result-row">
+      <span class="result-label">CSV Saved To</span>
+      <span class="result-value" style="font-size:10px">Downloads/upwork_result.csv</span>
+    </div>
+  </div>
+
+  <button id="main-btn" class="btn btn-disabled" disabled>
+    <span id="btn-icon">⏳</span>
+    <span id="btn-text">Starting...</span>
+  </button>
+
+</div>
+
+<div class="footer">
+  <span id="footer-lic" class="footer-lic">⏳ Authenticating...</span>
+  <a class="footer-link"
+     href="https://upwork.doublemoon.biz/mypage"
+     target="_blank">🌐 My Page</a>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
