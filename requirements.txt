@@ -1,10 +1,13 @@
-# Upwork JobSearch サーバー（リデザイン版）依存パッケージ 一式
-# 既存分
+# Upwork JobSearch サーバー（リデザイン版）依存パッケージ
 fastapi==0.115.0
 uvicorn==0.30.6
 httpx==0.27.2
 python-dateutil==2.9.0
 psycopg2-binary==2.9.10
 python-multipart==0.0.12
-# リデザインで追加
-polar-sdk
+
+# polar-sdk は決済Webhookを実装する段階で追加する。
+# （payments.py は polar_sdk を関数内で遅延importするため、未インストールでもサーバーは起動し
+#   /evaluate・フロントは動作する。実際に /webhook/polar を叩くときだけ必要）
+# 追加する際は Python を 3.12 に固定した状態で:
+# polar-sdk
