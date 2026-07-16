@@ -25,11 +25,17 @@ from database import (
     upload_file, get_active_file, get_all_files, activate_file, delete_file,
 )
 
+# ── リデザイン追加分 ──
+from db_redesign import migrate               # DBマイグレーション（列・使用量テーブル）
+from evaluate import router as evaluate_router  # 採点API: POST /evaluate
+from payments import router as payments_router  # 決済Webhook: POST /webhook/{provider}
+
 # ══════════════════════════════════════════
 # 初期化
 # ══════════════════════════════════════════
-app = FastAPI(title="Upwork JobSearch API", version="2.0.0")
+app = FastAPI(title="Upwork JobSearch API", version="3.0.0")
 init_db()
+migrate()   # リデザイン: subscription_id/provider 列・usage_tracking 表を用意（既適用でも安全）
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +43,10 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+# リデザイン: 採点API と 決済Webhook を登録
+app.include_router(evaluate_router)   # POST /evaluate
+app.include_router(payments_router)   # POST /webhook/{provider}  (例: /webhook/polar)
 
 # 環境変数
 ADMIN_USER     = os.environ.get("ADMIN_USER",     "admin")
@@ -60,14 +70,21 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
 # ══════════════════════════════════════════
 # 基本エンドポイント
 # ══════════════════════════════════════════
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    return {
-        "service": "Upwork JobSearch API",
-        "version": "2.0.0",
-        "status":  "running",
-        "design":  "license-auth + prompt-distribution",
-    }
+    # リデザイン: フロント(index.html)を配信。見つからなければ簡易表示。
+    for path in ("frontend/index.html", "index.html"):
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+    return HTMLResponse(
+        content="<h1>Upwork JobSearch</h1><p>frontend (index.html) not found.</p>"
+    )
+
+
+@app.get("/health")
+async def health():
+    return {"service": "Upwork JobSearch API", "version": "3.0.0", "status": "running"}
 
 
 @app.get("/ping")
@@ -189,11 +206,11 @@ async def mypage():
     <p style="font-size:12px;color:#777;margin-bottom:14px">
       After confirming your license, please download the files using the buttons below.
     </p>
-    <a href="/download/excel" class="dl-btn dl-excel">
-      📊 Download Excel File (.xlsm)
+    <a href="/" class="dl-btn dl-excel">
+      🚀 Open the web app
     </a>
-    <a href="/download/extension" class="dl-btn dl-ext">
-      🧩 Download Chrome Extension (.zip)
+    <a href="/download/excel" class="dl-btn dl-ext">
+      📊 Download Excel File (optional)
     </a>
   </div>
 
@@ -277,17 +294,7 @@ async def download_excel():
     )
 
 
-@app.get("/download/extension")
-async def download_extension():
-    f = get_active_file("extension")
-    if not f:
-        return JSONResponse(status_code=404,
-            content={"message": "ファイルが準備中です"})
-    return Response(
-        content=bytes(f["file_data"]),
-        media_type=f["content_type"],
-        headers={"Content-Disposition": f'attachment; filename={f["filename"]}'},
-    )
+# （リデザインで Chrome拡張は廃止したため /download/extension は削除）
 
 
 # ══════════════════════════════════════════

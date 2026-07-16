@@ -1,6 +1,10 @@
+# Upwork JobSearch サーバー（リデザイン版）依存パッケージ 一式
+# 既存分
 fastapi==0.115.0
 uvicorn==0.30.6
 httpx==0.27.2
 python-dateutil==2.9.0
 psycopg2-binary==2.9.10
 python-multipart==0.0.12
+# リデザインで追加
+polar-sdk
