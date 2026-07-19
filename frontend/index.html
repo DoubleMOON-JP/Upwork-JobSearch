@@ -9,7 +9,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
   :root{
@@ -166,6 +165,25 @@
   .empty{text-align:center; color:var(--muted); padding:44px 20px}
   .empty .big{font-family:var(--font-display); font-size:15px; color:var(--ink-soft); margin-bottom:6px}
 
+  /* ── Promo (広告欄) ── */
+  .promo{
+    display:flex; align-items:center; gap:13px;
+    background:linear-gradient(180deg,#FFFFFF 0%, #FBFCFD 100%);
+    border:1px solid var(--line); border-left:4px solid var(--brand);
+    border-radius:var(--radius); box-shadow:var(--shadow);
+    padding:13px 16px; text-decoration:none; color:inherit;
+  }
+  .promo:hover{border-color:var(--brand); transform:translateY(-1px)}
+  .promo-badge{
+    font-family:var(--font-display); font-size:10px; font-weight:700; letter-spacing:.1em;
+    color:var(--brand); background:#FBEDE3; border:1px solid #F0D3BE;
+    padding:3px 7px; border-radius:5px; flex-shrink:0;
+  }
+  .promo-main{display:flex; flex-direction:column; gap:2px; flex:1; min-width:0}
+  .promo-title{font-family:var(--font-display); font-weight:600; font-size:14px; color:var(--ink)}
+  .promo-body{font-size:12.5px; color:var(--muted)}
+  .promo-arrow{color:var(--brand); font-size:16px; flex-shrink:0}
+
   @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important} }
 </style>
 </head>
@@ -277,8 +295,20 @@
 
     </div>
 
-    <!-- RIGHT: results -->
-    <div class="panel" style="min-height:320px">
+    <!-- RIGHT: promo + results -->
+    <div class="stack">
+
+      <!-- Promo (中身がある時だけ表示) -->
+      <a id="promoBox" class="promo hidden" href="#" target="_blank" rel="noopener">
+        <span class="promo-badge">PR</span>
+        <span class="promo-main">
+          <span id="promoTitle" class="promo-title"></span>
+          <span id="promoBody" class="promo-body"></span>
+        </span>
+        <span class="promo-arrow">→</span>
+      </a>
+
+      <div class="panel" style="min-height:320px">
       <div class="panel-head">
         <span class="eyebrow">Results</span>
         <h2 style="flex:1">Triage board</h2>
@@ -291,6 +321,8 @@
           <div>Paste listings on the left and press “Score these jobs”.</div>
         </div>
       </div>
+      </div>
+
     </div>
 
   </div>
@@ -318,6 +350,7 @@ const $ = (id)=>document.getElementById(id);
 // ── 起動時：保存済みキーがあれば自動サインイン試行 ──
 window.addEventListener("DOMContentLoaded", ()=>{
   loadProfile();
+  loadPromo();
   const savedKey = store.get("ujs_license");
   if(savedKey){ $("keyInput").value = savedKey; doLogin(savedKey, true); }
 
@@ -375,6 +408,21 @@ function signOut(){
   $("loginMsg").classList.add("hidden");
 }
 
+// ── 広告欄（管理画面から設定。未設定なら表示しない） ──
+async function loadPromo(){
+  try{
+    const res = await fetch(API_BASE + "/promo");
+    if(!res.ok) return;
+    const p = await res.json();
+    if(!p || !p.enabled || !p.title) return;   // 未設定・OFFなら出さない
+    $("promoTitle").textContent = p.title;
+    $("promoBody").textContent  = p.body || "";
+    const box = $("promoBox");
+    if(p.url){ box.href = p.url; } else { box.removeAttribute("href"); }
+    box.classList.remove("hidden");
+  }catch(e){ /* 取得失敗時は黙って非表示のまま */ }
+}
+
 // ── プロフィール（端末ローカル保存） ──
 const PROFILE_FIELDS = ["p_skills","p_categories","p_min_rate","p_prefer","p_avoid","p_highlights","p_ai_request"];
 function saveProfile(){
@@ -408,6 +456,14 @@ async function runEvaluate(){
   if(!pasted){ showEvalMsg("Paste some job listings first."); return; }
   if(!session){ signOut(); return; }
 
+  // プロフィール未入力の警告（実行はブロックしない）
+  const prof = collectProfile();
+  const profileEmpty = !prof.skills && !prof.categories && !prof.min_rate
+                       && !prof.prefer_keywords && !prof.avoid_keywords && !prof.highlights;
+  if(profileEmpty){
+    showEvalMsg("プロフィールが未入力です。一般的な基準で採点されます。");
+  }
+
   setEvalLoading(true);
   try{
     const res = await fetch(API_BASE + "/evaluate", {
@@ -415,7 +471,7 @@ async function runEvaluate(){
       body: JSON.stringify({
         license_key: session.license_key,
         pasted_text: pasted,
-        profile: collectProfile(),
+        profile: prof,
         ai_request: $("p_ai_request").value.trim(),
         score_threshold: parseInt($("threshold").value || "0", 10),
       })
@@ -494,7 +550,6 @@ function renderResults(data){
     ${q.remaining!=null ? `<span class="stat">Quota left <b>${q.remaining}</b>/${q.monthly_cap}</span>` : ""}
     <span class="toolbar">
       <button class="btn btn-ghost" id="dlCsv">Download CSV</button>
-      <button class="btn btn-ghost" id="dlXlsx">Download Excel</button>
     </span>`;
   sum.classList.remove("hidden");
 
@@ -530,7 +585,6 @@ function renderResults(data){
   $("results").innerHTML = rows;
   $("emptyState").classList.add("hidden");
   $("dlCsv").addEventListener("click", downloadCsv);
-  $("dlXlsx").addEventListener("click", downloadXlsx);
 }
 
 // ── 出力 ──
@@ -546,14 +600,6 @@ function downloadCsv(){
   const lines = [HEADERS.join(",")].concat(jobRows().map(r=>r.map(esc).join(",")));
   const blob = new Blob(["\uFEFF"+lines.join("\r\n")], {type:"text/csv;charset=utf-8"});
   triggerDownload(blob, "upwork_result.csv");
-}
-function downloadXlsx(){
-  const aoa = [HEADERS].concat(jobRows());
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{wch:7},{wch:15},{wch:44},{wch:16},{wch:18},{wch:30},{wch:50},{wch:40}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Results");
-  XLSX.writeFile(wb, "upwork_result.xlsx");
 }
 function triggerDownload(blob, name){
   const url = URL.createObjectURL(blob);
