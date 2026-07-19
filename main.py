@@ -80,6 +80,16 @@ async def root():
     )
 
 
+@app.get("/campaign", response_class=HTMLResponse)
+async def campaign_page():
+    # SNS拡散キャンペーンの申請ページ
+    for path in ("frontend/campaign.html", "campaign.html"):
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Not found</h1>", status_code=404)
+
+
 @app.get("/health")
 async def health():
     return {"service": "Upwork JobSearch API", "version": "3.0.0", "status": "running"}
