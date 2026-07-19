@@ -18,15 +18,13 @@ from database import (
     get_all_licenses, export_licenses_csv,
     get_license_with_config,
     get_active_prompt, get_all_prompts, create_prompt, activate_prompt,
-    get_active_selectors, get_all_selectors, create_selectors, activate_selectors,
-    get_excludes, get_all_excludes, add_exclude, delete_exclude,
     get_ai_settings, update_ai_setting,
     get_latest_version,
     upload_file, get_active_file, get_all_files, activate_file, delete_file,
 )
 
 # ── リデザイン追加分 ──
-from db_redesign import migrate               # DBマイグレーション（列・使用量テーブル）
+from db_redesign import migrate, get_promo, save_promo   # DBマイグレーション＋広告欄
 from evaluate import router as evaluate_router  # 採点API: POST /evaluate
 from payments import router as payments_router  # 決済Webhook: POST /webhook/{provider}
 
@@ -85,6 +83,22 @@ async def root():
 @app.get("/health")
 async def health():
     return {"service": "Upwork JobSearch API", "version": "3.0.0", "status": "running"}
+
+
+# ── 広告欄 ──
+@app.get("/promo")
+async def promo_get():
+    """フロントが起動時に取得。未設定・OFFなら表示されない。"""
+    return get_promo()
+
+
+@app.post("/admin/promo/save")
+async def admin_promo_save(request: Request, username: str = Depends(verify_admin)):
+    data = await request.json()
+    return save_promo(
+        data.get("title", ""), data.get("body", ""),
+        data.get("url", ""), bool(data.get("enabled")),
+    )
 
 
 @app.get("/ping")
@@ -304,9 +318,8 @@ async def download_excel():
 async def admin_page(username: str = Depends(verify_admin)):
     licenses = get_all_licenses()
     prompts  = get_all_prompts()
-    selectors_all = get_all_selectors('upwork')
-    excludes_all  = get_all_excludes()
     files_all     = get_all_files()
+    promo         = get_promo()
     today = datetime.today().date().isoformat()
 
     # ライセンス一覧
@@ -345,35 +358,6 @@ async def admin_page(username: str = Depends(verify_admin)):
           <td><a href="/admin/prompts/{p['id']}" style="font-size:11px;color:#2E75B6">編集</a></td>
         </tr>"""
 
-    # セレクター一覧
-    sel_rows = ""
-    for s in selectors_all:
-        active_badge = '<span style="background:#E2EFDA;color:#375623;padding:2px 6px;border-radius:3px;font-size:11px">有効</span>' \
-                       if s['is_active'] else \
-                       '<button onclick="activateSelector(' + str(s['id']) + ')" style="font-size:11px;padding:2px 6px;cursor:pointer">有効化</button>'
-        sel_rows += f"""
-        <tr>
-          <td>{s['id']}</td>
-          <td>{s['version']}</td>
-          <td>{s['service']}</td>
-          <td>{active_badge}</td>
-          <td>{s['created_at'][:10]}</td>
-          <td><a href="/admin/selectors/{s['id']}" style="font-size:11px;color:#2E75B6">編集</a></td>
-        </tr>"""
-
-    # 除外リスト
-    exc_rows = ""
-    for e in excludes_all:
-        exc_rows += f"""
-        <tr>
-          <td>{e['id']}</td>
-          <td>{e['category']}</td>
-          <td>{e['keyword']}</td>
-          <td>
-            <button onclick="delExclude({e['id']})"
-              style="font-size:11px;padding:2px 6px;cursor:pointer;color:#843C0C">削除</button>
-          </td>
-        </tr>"""
 
     # 配布ファイル一覧
     file_rows = ""
@@ -460,10 +444,6 @@ async def admin_page(username: str = Depends(verify_admin)):
         <div class="stat-num">{len(prompts)}</div>
         <div class="stat-label">登録プロンプト</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-num">{len(excludes_all)}</div>
-        <div class="stat-label">除外キーワード</div>
-      </div>
     </div>
   </div>
 
@@ -513,38 +493,33 @@ async def admin_page(username: str = Depends(verify_admin)):
     </table>
   </div>
 
-  <!-- セレクター管理 -->
+  <!-- 広告欄設定 -->
   <div class="card">
-    <h2>🎯 DOMセレクター管理
-      <a href="/admin/selectors/new" class="new-link">+ 新規作成</a>
-    </h2>
-    <table>
-      <thead>
-        <tr><th>ID</th><th>バージョン</th><th>サービス</th><th>状態</th><th>作成日</th><th>操作</th></tr>
-      </thead>
-      <tbody>{sel_rows}</tbody>
-    </table>
-  </div>
-
-  <!-- 除外リスト管理 -->
-  <div class="card">
-    <h2>🚫 除外キーワード管理</h2>
+    <h2>📣 広告欄（結果画面の上に表示）</h2>
     <div class="form-row">
-      <label>カテゴリ</label>
-      <select id="exc-category">
-        <option value="skill_tags">skill_tags</option>
+      <label>表示</label>
+      <select id="promo-enabled">
+        <option value="1" {'selected' if promo['enabled'] else ''}>ON</option>
+        <option value="0" {'' if promo['enabled'] else 'selected'}>OFF</option>
       </select>
-      <label>キーワード</label>
-      <input type="text" id="exc-keyword" placeholder="除外したい文字列" style="min-width:200px">
-      <button class="btn btn-blue" onclick="addExclude()">追加</button>
     </div>
-    <div id="exc-msg" class="msg"></div>
-    <table style="margin-top:14px">
-      <thead>
-        <tr><th>ID</th><th>カテゴリ</th><th>キーワード</th><th>操作</th></tr>
-      </thead>
-      <tbody>{exc_rows}</tbody>
-    </table>
+    <div class="form-row">
+      <label>タイトル</label>
+      <input type="text" id="promo-title" value="{promo['title']}" placeholder="紹介したいサービス名" style="min-width:300px">
+    </div>
+    <div class="form-row">
+      <label>説明</label>
+      <input type="text" id="promo-body" value="{promo['body']}" placeholder="ひとこと説明" style="min-width:400px">
+    </div>
+    <div class="form-row">
+      <label>リンク先</label>
+      <input type="text" id="promo-url" value="{promo['url']}" placeholder="https://..." style="min-width:400px">
+      <button class="btn btn-blue" onclick="savePromo()">保存</button>
+    </div>
+    <div id="promo-msg" class="msg"></div>
+    <div class="help" style="margin-top:8px;font-size:12px;color:#777">
+      ※ 表示がOFF、またはタイトルが空の場合、利用者の画面には表示されません。
+    </div>
   </div>
 
   <!-- 配布ファイル管理 -->
@@ -627,39 +602,8 @@ async function activatePrompt(id) {{
   else alert('エラーが発生しました');
 }}
 
-async function activateSelector(id) {{
-  if (!confirm('このセレクター定義を有効化しますか？')) return;
-  const res = await fetch('/admin/selector/' + id + '/activate', {{method: 'POST'}});
-  if (res.ok) location.reload();
-  else alert('エラーが発生しました');
-}}
 
-async function addExclude() {{
-  const cat = document.getElementById('exc-category').value;
-  const kw  = document.getElementById('exc-keyword').value.trim();
-  const msg = document.getElementById('exc-msg');
-  if (!kw) {{ alert('キーワードを入力してください'); return; }}
-  const res = await fetch('/admin/exclude/add', {{
-    method: 'POST',
-    headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{category: cat, keyword: kw}}),
-  }});
-  if (res.ok) {{
-    msg.className = 'msg ok';
-    msg.innerHTML = '✅ 追加しました';
-    setTimeout(() => location.reload(), 1000);
-  }} else {{
-    msg.className = 'msg error';
-    msg.innerHTML = '❌ エラーが発生しました';
-  }}
-}}
 
-async function delExclude(id) {{
-  if (!confirm('削除しますか？')) return;
-  const res = await fetch('/admin/exclude/' + id, {{method: 'DELETE'}});
-  if (res.ok) location.reload();
-  else alert('エラーが発生しました');
-}}
 
 async function uploadFile() {{
   const component = document.getElementById('file-component').value;
@@ -868,139 +812,11 @@ async def admin_activate_prompt(prompt_id: int, username: str = Depends(verify_a
 
 
 # ── セレクター管理API ──
-@app.get("/admin/selectors/{selector_id}", response_class=HTMLResponse)
-async def admin_selector_edit(selector_id: int, username: str = Depends(verify_admin)):
-    selectors = get_all_selectors('upwork')
-    target = next((s for s in selectors if s['id'] == selector_id), None)
-    if not target:
-        return HTMLResponse(content="<h1>セレクター定義が見つかりません</h1>", status_code=404)
-    return _render_selector_edit_page(target)
 
 
-@app.get("/admin/selectors/new", response_class=HTMLResponse)
-async def admin_selector_new(username: str = Depends(verify_admin)):
-    return _render_selector_edit_page(None)
 
 
-def _render_selector_edit_page(target: dict | None):
-    is_new = target is None
-    title = "新規セレクター定義作成" if is_new else f"セレクター定義編集 (ID: {target['id']})"
-    version = "" if is_new else target['version']
-    service = "upwork" if is_new else target['service']
-    config_str = "{}" if is_new else json.dumps(json.loads(target['config_json']), ensure_ascii=False, indent=2)
-    note = "" if is_new else (target.get('note') or '')
 
-    return HTMLResponse(content=f"""<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8"><title>{title}</title>
-<style>
-* {{ box-sizing: border-box; margin: 0; padding: 0; }}
-body {{ font-family: Arial, sans-serif; background: #F5F7FA; padding: 24px; }}
-.container {{ max-width: 900px; margin: 0 auto; background: white; padding: 24px; border-radius: 10px; }}
-h1 {{ font-size: 18px; color: #1A2B4A; margin-bottom: 16px; }}
-label {{ display: block; font-size: 12px; color: #555; margin: 12px 0 4px; }}
-input, textarea, select {{ width: 100%; padding: 8px 12px; border: 1px solid #BFCFDF;
-  border-radius: 5px; font-size: 13px; font-family: monospace; }}
-textarea {{ min-height: 400px; resize: vertical; }}
-.btn {{ padding: 10px 24px; border: none; border-radius: 5px;
-  font-size: 13px; font-weight: bold; cursor: pointer; margin-top: 16px; }}
-.btn-primary {{ background: #C55A11; color: white; }}
-.btn-cancel {{ background: #888; color: white; margin-left: 8px; }}
-.msg {{ padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 12px; display: none; }}
-.msg.ok {{ background: #E2EFDA; color: #375623; display: block; }}
-.msg.error {{ background: #FCE4D6; color: #843C0C; display: block; }}
-.help {{ background: #FFF8E7; border: 1px solid #FFD966; padding: 10px;
-  border-radius: 5px; font-size: 11px; color: #7F6000; margin-bottom: 12px; }}
-</style></head><body>
-<div class="container">
-<h1>🎯 {title}</h1>
-<div class="help">JSON形式で記述してください。必須キー: title_selector, section_selector, budget_keywords, posted_keywords, max_jobs等</div>
-<label>バージョン</label>
-<input type="text" id="s-version" value="{version}" placeholder="v1.0">
-<label>サービス</label>
-<input type="text" id="s-service" value="{service}" placeholder="upwork">
-<label>備考</label>
-<input type="text" id="s-note" value="{note}" placeholder="任意">
-<label>セレクター定義（JSON）</label>
-<textarea id="s-config">{config_str}</textarea>
-<button class="btn btn-primary" onclick="saveSelector()">保存</button>
-<a href="/admin" class="btn btn-cancel" style="text-decoration:none;display:inline-block">キャンセル</a>
-<div id="msg" class="msg"></div>
-</div>
-<script>
-async function saveSelector() {{
-  const version = document.getElementById('s-version').value.trim();
-  const service = document.getElementById('s-service').value.trim();
-  const note = document.getElementById('s-note').value.trim();
-  const configStr = document.getElementById('s-config').value;
-  const msg = document.getElementById('msg');
-  let config;
-  try {{ config = JSON.parse(configStr); }} catch(e) {{
-    msg.className = 'msg error';
-    msg.textContent = '❌ JSONの形式が正しくありません: ' + e.message;
-    return;
-  }}
-  if (!version || !service) {{
-    msg.className = 'msg error';
-    msg.textContent = 'バージョンとサービスは必須です';
-    return;
-  }}
-  const res = await fetch('/admin/selector/create', {{
-    method: 'POST',
-    headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{version, service, config, note}}),
-  }});
-  const data = await res.json();
-  if (res.ok) {{
-    msg.className = 'msg ok';
-    msg.innerHTML = '✅ 保存しました (ID: ' + data.id + ')<br>'
-      + '<a href="/admin">管理画面に戻る</a>から有効化してください';
-  }} else {{
-    msg.className = 'msg error';
-    msg.textContent = '❌ ' + (data.message || 'エラー');
-  }}
-}}
-</script>
-</body></html>""")
-
-
-@app.post("/admin/selector/create")
-async def admin_create_selector(request: Request, username: str = Depends(verify_admin)):
-    body = await request.json()
-    version = body.get("version", "").strip()
-    service = body.get("service", "upwork").strip()
-    config  = body.get("config", {})
-    note    = body.get("note", "")
-    if not version or not service or not config:
-        return JSONResponse(status_code=400, content={"message": "必須項目が不足しています"})
-    return create_selectors(version, service, config, note)
-
-
-@app.post("/admin/selector/{selector_id}/activate")
-async def admin_activate_selector(selector_id: int, username: str = Depends(verify_admin)):
-    return activate_selectors(selector_id)
-
-
-# ── 除外リスト管理API ──
-@app.post("/admin/exclude/add")
-async def admin_add_exclude(request: Request, username: str = Depends(verify_admin)):
-    body = await request.json()
-    category = body.get("category", "skill_tags")
-    keyword  = body.get("keyword", "").strip()
-    if not keyword:
-        return JSONResponse(status_code=400, content={"message": "keywordが必要です"})
-    return add_exclude(category, keyword)
-
-
-@app.delete("/admin/exclude/{exclude_id}")
-async def admin_delete_exclude(exclude_id: int, username: str = Depends(verify_admin)):
-    return delete_exclude(exclude_id)
-
-
-# ── 配布ファイル管理API ──
-ALLOWED_FILE_COMPONENTS = {
-    "excel":     "application/vnd.ms-excel.sheet.macroEnabled.12",
-    "extension": "application/zip",
-}
 
 
 @app.post("/admin/file/upload")

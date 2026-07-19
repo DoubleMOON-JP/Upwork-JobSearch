@@ -30,7 +30,47 @@ def migrate():
                     period_month      TEXT,               -- 'YYYY-MM'
                     month_count       INTEGER NOT NULL DEFAULT 0
                 );
+
+                -- 広告欄（1行だけ使う。未設定ならフロントに表示されない）
+                CREATE TABLE IF NOT EXISTS promo (
+                    id      INTEGER PRIMARY KEY DEFAULT 1,
+                    title   TEXT NOT NULL DEFAULT '',
+                    body    TEXT NOT NULL DEFAULT '',
+                    url     TEXT NOT NULL DEFAULT '',
+                    enabled INTEGER NOT NULL DEFAULT 0
+                );
+                INSERT INTO promo (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
             """)
+
+
+# ── 広告欄 ────────────────────────────────────────────────
+def get_promo() -> dict:
+    """フロント/管理画面から参照。常に1行を返す。"""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT title, body, url, enabled FROM promo WHERE id = 1")
+            row = cur.fetchone()
+    if not row:
+        return {"title": "", "body": "", "url": "", "enabled": 0}
+    d = dict(row)
+    d["enabled"] = bool(d.get("enabled"))
+    return d
+
+
+def save_promo(title: str, body: str, url: str, enabled: bool) -> dict:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO promo (id, title, body, url, enabled)
+                VALUES (1, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    title = EXCLUDED.title, body = EXCLUDED.body,
+                    url = EXCLUDED.url, enabled = EXCLUDED.enabled
+                """,
+                (title or "", body or "", url or "", 1 if enabled else 0),
+            )
+    return {"status": "ok"}
 
 
 # ── サブスク紐づけ（payments.py から使用） ──────────────────
