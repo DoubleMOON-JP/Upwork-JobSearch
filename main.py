@@ -665,6 +665,24 @@ async function delFile(id) {{
   if (res.ok) location.reload();
   else alert('エラーが発生しました');
 }}
+
+async function savePromo() {{
+  const res = await fetch('/admin/promo/save', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{
+      title: document.getElementById('promo-title').value,
+      body: document.getElementById('promo-body').value,
+      url: document.getElementById('promo-url').value,
+      enabled: document.getElementById('promo-enabled').value === '1'
+    }})
+  }});
+  const d = await res.json();
+  const m = document.getElementById('promo-msg');
+  m.textContent = (d.status === 'ok') ? '保存しました' : '保存に失敗しました';
+  m.className = 'msg ' + ((d.status === 'ok') ? 'ok' : 'error');
+  m.style.display = 'block';
+}}
 </script>
 </body>
 </html>"""
