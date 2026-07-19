@@ -85,6 +85,19 @@ def _extract_text(gemini_json: dict) -> str:
         return ""
 
 
+def _extract_usage(gemini_json: dict) -> dict:
+    """Geminiが返す正確なトークン数（推測ではなく実測値）。コスト算出に使用。"""
+    u = gemini_json.get("usageMetadata", {}) or {}
+    prompt_tokens = u.get("promptTokenCount", 0)
+    output_tokens = u.get("candidatesTokenCount", 0)
+    total_tokens  = u.get("totalTokenCount", prompt_tokens + output_tokens)
+    return {
+        "prompt_tokens": prompt_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens":  total_tokens,
+    }
+
+
 def _parse_json_array(text: str):
     """Geminiの返答から JSON 配列を安全に取り出す。```json フェンス等を除去。"""
     cleaned = re.sub(r"```(?:json)?", "", text).strip()
@@ -143,7 +156,9 @@ async def evaluate(request: Request):
     if resp.status_code != 200:
         raise HTTPException(502, f"gemini error {resp.status_code}: {resp.text[:300]}")
 
-    text = _extract_text(resp.json())
+    gemini_json = resp.json()
+    text = _extract_text(gemini_json)
+    usage = _extract_usage(gemini_json)
     try:
         jobs = _parse_json_array(text)
     except (ValueError, json.JSONDecodeError) as e:
@@ -152,11 +167,17 @@ async def evaluate(request: Request):
     # ⑤ 閾値で「表示対象」を判定しつつ、全件返す（フィルタはフロント側でも可）
     matched = [j for j in jobs if int(j.get("score", 0)) >= threshold]
 
+    # コスト算出用：Renderのログに実測トークン数を記録（Gemini APIレスポンスの正確な値）
+    print(f"[evaluate] model={model} jobs={len(jobs)} "
+          f"prompt_tokens={usage['prompt_tokens']} output_tokens={usage['output_tokens']} "
+          f"total_tokens={usage['total_tokens']}")
+
     return {
         "status": "ok",
         "count": len(jobs),
         "matched": len(matched),
         "threshold": threshold,
         "quota": quota,
+        "token_usage": usage,   # 実測値。プロンプト/出力/合計トークン数
         "jobs": jobs,
     }
