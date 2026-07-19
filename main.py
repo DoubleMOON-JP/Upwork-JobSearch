@@ -37,7 +37,7 @@ migrate()   # リデザイン: subscription_id/provider 列・usage_tracking 表
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://upwork.doublemoon.biz"],  # 自社ドメインのみ許可（将来の別ブランドは別サービスで独立管理）
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
