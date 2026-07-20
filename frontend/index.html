@@ -200,6 +200,13 @@
     .promo-arrow{margin-left:auto}
   }
 
+  /* ── Site footer ── */
+  .site-footer{
+    text-align:center; padding:24px 16px 32px; font-size:12.5px; color:var(--muted);
+  }
+  .site-footer a{color:var(--muted); text-decoration:none}
+  .site-footer a:hover{color:var(--ink); text-decoration:underline}
+
   @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important} }
 </style>
 </head>
@@ -228,6 +235,9 @@
       <button id="loginBtn" class="btn btn-primary" style="width:100%; justify-content:center">Sign in</button>
       <div id="loginMsg" class="msg msg-error hidden"></div>
     </div>
+  </div>
+  <div class="site-footer">
+    <a href="/privacy">Privacy Policy</a>
   </div>
 </section>
 
@@ -341,6 +351,10 @@
 
     </div>
 
+  </div>
+
+  <div class="site-footer">
+    <a href="/privacy">Privacy Policy</a>
   </div>
 </main>
 
@@ -554,6 +568,11 @@ function renderResults(data){
   const jobs = lastJobs.slice().sort((a,b)=>(b.score||0)-(a.score||0));
   const counts = {apply:0,maybe:0,skip:0};
   jobs.forEach(j=>counts[verdictClass(j.recommendation)]++);
+
+  // コスト確認用：実測トークン数はコンソールにだけ出す（画面は汚さない）
+  if(data.token_usage){
+    console.log("[Upwork JobSearch] token usage:", data.token_usage);
+  }
 
   // summary
   const q = data.quota || {};
