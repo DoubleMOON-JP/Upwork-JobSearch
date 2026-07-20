@@ -316,8 +316,8 @@
         <div class="panel-body">
           <div class="field">
             <label for="pasteBox">Copied job listings</label>
-            <textarea id="pasteBox" rows="9" placeholder="On Upwork, select the search results and copy (Ctrl/⌘+C), then paste here. Multiple pages are fine — noise is ignored."></textarea>
-            <p class="hint">Tip: sort Upwork by “Newest”, select from the first job to the last, copy, and paste.</p>
+            <textarea id="pasteBox" rows="9" placeholder="Go to Upwork's job search page (not Saved Jobs or Invites) and sort by &quot;Most Recent&quot;. Press Ctrl/⌘+A to select the page, then Ctrl/⌘+C to copy. Paste it here — multiple pages are fine, noise is ignored."></textarea>
+            <p class="hint">Tip: use the job search page, not Saved Jobs or Invites.</p>
           </div>
           <div class="row2 field" style="align-items:end">
             <div>
@@ -526,7 +526,7 @@ async function runEvaluate(){
   const profileEmpty = !prof.skills && !prof.categories && !prof.min_rate
                        && !prof.prefer_keywords && !prof.avoid_keywords && !prof.highlights;
   if(profileEmpty){
-    showEvalMsg("プロフィールが未入力です。一般的な基準で採点されます。");
+    showEvalMsg("Your profile is empty. Jobs will be scored using general criteria.");
   }
 
   setEvalLoading(true);
