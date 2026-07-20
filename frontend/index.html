@@ -105,6 +105,15 @@
   .login-wrap h2{font-size:18px; margin-bottom:4px}
   .login-wrap p.sub{font-size:13px; color:var(--muted); margin:0 0 18px}
 
+  .consent-row{
+    display:flex; align-items:flex-start; gap:8px; font-size:12.5px; color:var(--ink-soft);
+    margin:2px 0 16px; cursor:pointer; line-height:1.5;
+  }
+  .consent-row input[type=checkbox]{
+    width:16px; height:16px; margin-top:1px; flex-shrink:0; accent-color:var(--brand); cursor:pointer;
+  }
+  .consent-row a{color:var(--brand-dark)}
+
   /* ── Layout of app ── */
   .grid{display:grid; grid-template-columns:1fr; gap:18px}
   @media(min-width:900px){ .grid{grid-template-columns:minmax(340px,420px) 1fr; align-items:start} }
@@ -232,7 +241,11 @@
         <label for="keyInput">License key</label>
         <input id="keyInput" type="text" placeholder="UPWK-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" />
       </div>
-      <button id="loginBtn" class="btn btn-primary" style="width:100%; justify-content:center">Sign in</button>
+      <label class="consent-row" for="privacyAgree">
+        <input type="checkbox" id="privacyAgree" />
+        <span>I have read and agree to the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</span>
+      </label>
+      <button id="loginBtn" class="btn btn-primary" style="width:100%; justify-content:center" disabled>Sign in</button>
       <div id="loginMsg" class="msg msg-error hidden"></div>
     </div>
   </div>
@@ -381,15 +394,36 @@ const $ = (id)=>document.getElementById(id);
 window.addEventListener("DOMContentLoaded", ()=>{
   loadProfile();
   loadPromo();
-  const savedKey = store.get("ujs_license");
-  if(savedKey){ $("keyInput").value = savedKey; doLogin(savedKey, true); }
 
-  $("loginBtn").addEventListener("click", ()=>doLogin($("keyInput").value.trim(), false));
-  $("keyInput").addEventListener("keydown", e=>{ if(e.key==="Enter") doLogin($("keyInput").value.trim(), false); });
+  const agreed = store.get("ujs_privacy_agreed") === "1";
+  $("privacyAgree").checked = agreed;
+  updateLoginButtonState();
+
+  const savedKey = store.get("ujs_license");
+  if(savedKey){
+    $("keyInput").value = savedKey;
+    if(agreed){ doLogin(savedKey, true); }   // 同意済みの端末のみ自動サインイン
+  }
+
+  $("privacyAgree").addEventListener("change", updateLoginButtonState);
+  $("loginBtn").addEventListener("click", ()=>attemptLogin($("keyInput").value.trim()));
+  $("keyInput").addEventListener("keydown", e=>{ if(e.key==="Enter") attemptLogin($("keyInput").value.trim()); });
   $("signOut").addEventListener("click", signOut);
   $("saveProfile").addEventListener("click", saveProfile);
   $("evalBtn").addEventListener("click", runEvaluate);
 });
+
+function updateLoginButtonState(){
+  $("loginBtn").disabled = !$("privacyAgree").checked;
+}
+
+function attemptLogin(key){
+  if(!$("privacyAgree").checked){
+    showLoginMsg("Please agree to the Privacy Policy first.");
+    return;
+  }
+  doLogin(key, false);
+}
 
 // ── ログイン ──
 async function doLogin(key, silent){
@@ -409,11 +443,12 @@ async function doLogin(key, silent){
     const lic = data.license || {};
     session = { license_key:key, plan:lic.plan, days_left:lic.days_left, email:lic.email };
     store.set("ujs_license", key);
+    if($("privacyAgree").checked){ store.set("ujs_privacy_agreed", "1"); }
     enterApp();
   }catch(err){
     showLoginMsg("Could not reach the server. Try again.");
   }finally{
-    $("loginBtn").disabled = false;
+    updateLoginButtonState();
   }
 }
 
