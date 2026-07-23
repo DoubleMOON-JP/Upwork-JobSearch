@@ -70,7 +70,6 @@ Return ONLY a JSON array, no prose, no markdown fences. Each element:
   "budget": string,
   "posted": string,
   "skills": string,            // comma separated
-  "url": string,               // if present, else ""
   "score": integer,            // 0-100 fit against the profile
   "recommendation": string,    // one of: "Apply", "Maybe", "Skip"
   "reason": string             // short reason in English

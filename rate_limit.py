@@ -35,7 +35,7 @@ def check_and_consume(license_key: str, plan: str) -> dict:
             raise HTTPException(
                 status_code=429,
                 detail={"reason": "rate_limited",
-                        "message": f"あと {wait} 秒お待ちください",
+                        "message": f"Please wait {wait} seconds",
                         "retry_after_sec": wait},
             )
 
@@ -50,7 +50,7 @@ def check_and_consume(license_key: str, plan: str) -> dict:
         raise HTTPException(
             status_code=429,
             detail={"reason": "monthly_limit",
-                    "message": f"今月の上限（{cap}回）に達しました",
+                    "message": f"Monthly limit reached ({cap} evaluations)",
                     "monthly_cap": cap},
         )
 
