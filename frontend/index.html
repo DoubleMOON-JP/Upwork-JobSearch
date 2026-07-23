@@ -329,6 +329,7 @@
             </button>
           </div>
           <div id="evalMsg" class="msg msg-warn hidden"></div>
+          <button id="clearBtn" class="btn btn-ghost" style="width:100%; justify-content:center; margin-top:10px">Clear &amp; start a new search</button>
         </div>
       </div>
 
@@ -411,6 +412,7 @@ window.addEventListener("DOMContentLoaded", ()=>{
   $("signOut").addEventListener("click", signOut);
   $("saveProfile").addEventListener("click", saveProfile);
   $("evalBtn").addEventListener("click", runEvaluate);
+  $("clearBtn").addEventListener("click", clearSearch);
 });
 
 function updateLoginButtonState(){
@@ -511,6 +513,20 @@ function collectProfile(){
     avoid_keywords:  $("p_avoid").value.trim(),
     highlights:      $("p_highlights").value.trim(),
   };
+}
+
+// ── クリア（新しい検索を始める） ──
+function clearSearch(){
+  $("pasteBox").value = "";
+  $("evalMsg").classList.add("hidden");
+  lastJobs = [];
+  $("results").innerHTML = "";
+  $("summary").classList.add("hidden");
+  $("emptyState").classList.remove("hidden");
+  clearInterval(countdownTimer);
+  $("evalBtn").disabled = false;
+  $("evalLabel").textContent = "Score these jobs";
+  $("pasteBox").focus();
 }
 
 // ── 採点実行 ──
