@@ -737,6 +737,12 @@ async def admin_backup(username: str = Depends(verify_admin)):
 
 
 # ── プロンプト管理API ──
+@app.get("/admin/prompts/new", response_class=HTMLResponse)
+async def admin_prompt_new(username: str = Depends(verify_admin)):
+    """プロンプト新規作成画面"""
+    return _render_prompt_edit_page(None)
+
+
 @app.get("/admin/prompts/{prompt_id}", response_class=HTMLResponse)
 async def admin_prompt_edit(prompt_id: int, username: str = Depends(verify_admin)):
     """プロンプト編集画面"""
@@ -746,12 +752,6 @@ async def admin_prompt_edit(prompt_id: int, username: str = Depends(verify_admin
         return HTMLResponse(content="<h1>プロンプトが見つかりません</h1>", status_code=404)
 
     return _render_prompt_edit_page(target)
-
-
-@app.get("/admin/prompts/new", response_class=HTMLResponse)
-async def admin_prompt_new(username: str = Depends(verify_admin)):
-    """プロンプト新規作成画面"""
-    return _render_prompt_edit_page(None)
 
 
 def _render_prompt_edit_page(target: dict | None):
