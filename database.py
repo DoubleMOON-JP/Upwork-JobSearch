@@ -1,6 +1,9 @@
 """
-database.py - ライセンス管理＋プロンプト・セレクター・除外リスト管理DB
+database.py - ライセンス管理＋プロンプト／AI設定／配布ファイル管理DB
 PostgreSQL版（Render Basic Plan $7/月）
+
+※ リデザイン(v3.0)でDOMセレクター・除外リストは廃止した。
+   既存DBの selectors / excludes テーブルは残るが、コードからは一切参照しない。
 """
 import os
 import secrets
@@ -56,24 +59,6 @@ def init_db():
                     note         TEXT
                 );
 
-                CREATE TABLE IF NOT EXISTS selectors (
-                    id           SERIAL PRIMARY KEY,
-                    version      TEXT NOT NULL,
-                    service      TEXT NOT NULL DEFAULT 'upwork',
-                    config_json  TEXT NOT NULL,
-                    is_active    INTEGER NOT NULL DEFAULT 0,
-                    created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    note         TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS excludes (
-                    id           SERIAL PRIMARY KEY,
-                    category     TEXT NOT NULL,
-                    keyword      TEXT NOT NULL,
-                    is_active    INTEGER NOT NULL DEFAULT 1,
-                    created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                );
-
                 CREATE TABLE IF NOT EXISTS ai_settings (
                     id        SERIAL PRIMARY KEY,
                     key       TEXT NOT NULL UNIQUE,
@@ -114,8 +99,7 @@ def _seed_initial_data():
             cur.execute("SELECT COUNT(*) FROM app_versions")
             if cur.fetchone()[0] == 0:
                 for comp, ver, note in [
-                    ('extension', '1.0.0', '初回リリース'),
-                    ('excel',     '1.0.0', '初回リリース'),
+                    ('excel', '1.0.0', '初回リリース'),
                 ]:
                     cur.execute(
                         "INSERT INTO app_versions (component, version, release_note) VALUES (%s,%s,%s)",
@@ -125,38 +109,24 @@ def _seed_initial_data():
             # プロンプトの初期データ
             cur.execute("SELECT COUNT(*) FROM prompts")
             if cur.fetchone()[0] == 0:
-                default_prompt = """You are an assistant that evaluates Upwork jobs for a freelancer.
-Score each job from 0 to 100 based on the freelancer profile below.
-
-[Freelancer Profile]
-Skills: {skills}
-Preferred categories: {category}
-Minimum desired rate: {min_rate}{exclude_line}{prefer_line}{ai_request_line}
+                default_prompt = """You are an assistant that evaluates Upwork job postings
+for a freelancer, and scores each job from 0 to 100.
 
 [Evaluation criteria]
-- Skill match (higher match = higher score)
+- Skill match against the freelancer's profile (higher match = higher score)
 - Whether the budget or hourly rate meets or exceeds the minimum desired rate
 - Apply a large penalty when a "keyword to avoid" appears in the job
 - Apply a bonus when a "preferred keyword" appears in the job
+- Prefer recently posted jobs and clearly written requirements
 - If the user's request to the AI is provided, treat it as the top priority
 
-[Jobs to evaluate]
-{jobs_text}
+[Recommendation]
+- 80-100 -> "Apply"
+- 55-79  -> "Maybe"
+- 0-54   -> "Skip"
 
-[Output format]
-Respond ONLY in JSON, with no extra text.
-{{
-  "results": [
-    {{
-      "index": 0,
-      "score": 85,
-      "reason": "Briefly explain the score in 1-2 English sentences",
-      "recommendation": "Apply"
-    }}
-  ]
-}}
-"recommendation" must be exactly one of: "Apply", "Maybe", "Skip".
-The number of items in "results" must equal the number of jobs provided."""
+The freelancer profile, the pasted job text, and the required output format
+are appended below by the server. Follow that output format exactly."""
 
                 cur.execute(
                     """INSERT INTO prompts (version, name, template, is_active, note)
@@ -164,49 +134,11 @@ The number of items in "results" must equal the number of jobs provided."""
                     ('v1.0', 'Upwork Job Evaluation Prompt v1.0', default_prompt, 'Initial release')
                 )
 
-            # セレクター定義
-            cur.execute("SELECT COUNT(*) FROM selectors WHERE service = 'upwork'")
-            if cur.fetchone()[0] == 0:
-                default_selectors = {
-                    "title_selector":   "h3.job-tile-title a, h2.job-tile-title a",
-                    "section_selector": "section[data-ev-label-prefix], section.job-tile",
-                    "budget_keywords":  ["Fixed", "Hourly", "$", "Budget"],
-                    "posted_keywords":  ["Posted", "ago", "hours", "days", "minutes"],
-                    "skill_class_includes": ["token", "skill"],
-                    "url_base":         "https://www.upwork.com",
-                    "search_url_base":  "https://www.upwork.com/nx/find-work/best-matches?q=",
-                    "max_jobs":         30,
-                    "description_min_length": 30,
-                    "description_max_length": 300,
-                }
-                cur.execute(
-                    """INSERT INTO selectors (version, service, config_json, is_active, note)
-                       VALUES (%s, 'upwork', %s, 1, %s)""",
-                    ('v1.0', json.dumps(default_selectors, ensure_ascii=False), '初回リリース版')
-                )
-
-            # 除外リスト
-            cur.execute("SELECT COUNT(*) FROM excludes")
-            if cur.fetchone()[0] == 0:
-                default_excludes = [
-                    ('skill_tags', 'Previous skills'),
-                    ('skill_tags', 'Update list'),
-                    ('skill_tags', 'Skip skills'),
-                    ('skill_tags', 'Next skills'),
-                    ('skill_tags', 'Show more'),
-                    ('skill_tags', 'Show less'),
-                ]
-                for category, keyword in default_excludes:
-                    cur.execute(
-                        "INSERT INTO excludes (category, keyword) VALUES (%s,%s)",
-                        (category, keyword)
-                    )
-
             # AI設定
             cur.execute("SELECT COUNT(*) FROM ai_settings")
             if cur.fetchone()[0] == 0:
                 for key, value, note in [
-                    ('default_model',          'gemini-2.5-flash',     'デフォルトのGeminiモデル'),
+                    ('default_model',          'gemini-3.5-flash',     'デフォルトのGeminiモデル'),
                     ('max_output_tokens',      '4096',                 'AI応答の最大トークン数'),
                     ('temperature',            '0.3',                  '応答のランダム性（0〜1）'),
                     ('response_mime_type',     'application/json',     '応答の形式'),
@@ -230,8 +162,9 @@ def generate_license_key() -> str:
 
 def create_license(email: str, plan: str = '1month', note: str = '') -> dict:
     from dateutil.relativedelta import relativedelta
-    plan_months = {'1month': 1, '3month': 3, '6month': 6, '1year': 12}
-    months = plan_months.get(plan, 1)
+    from plans import plan_months   # プラン定義は plans.py に一本化
+
+    months = plan_months(plan)
     key = generate_license_key()
     expires_at = date.today() + relativedelta(months=months)
 
@@ -306,6 +239,27 @@ def extend_license(license_key: str, months: int = 1) -> dict:
     return {'success': True, 'new_expires_at': new_exp.isoformat()}
 
 
+def update_license_plan(license_key: str, plan: str) -> dict:
+    """
+    ライセンスのプランを変更する（管理画面からの手動操作用）。
+
+    Polar側でプラン変更（Standard⇔Pro）が行われても自動反映はしていないため、
+    運営者が管理画面から手動で合わせる。有効期限は変更しない。
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT plan FROM licenses WHERE license_key = %s", (license_key,))
+            row = cur.fetchone()
+            if not row:
+                return {'success': False, 'message': 'ライセンスキーが見つかりません'}
+            old_plan = row['plan']
+            cur.execute(
+                "UPDATE licenses SET plan = %s WHERE license_key = %s",
+                (plan, license_key)
+            )
+    return {'success': True, 'old_plan': old_plan, 'new_plan': plan}
+
+
 def get_all_licenses() -> list:
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -320,6 +274,145 @@ def get_all_licenses() -> list:
             d['created_at'] = d['created_at'].isoformat()
         result.append(d)
     return result
+
+
+def get_license_stats() -> dict:
+    """管理画面の統計用。件数だけをDB側で数える（全件取得を避ける）。"""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(*)                                                    AS total,
+                    COUNT(*) FILTER (WHERE expires_at >= CURRENT_DATE
+                                       AND status = 'active')                   AS active,
+                    COUNT(*) FILTER (WHERE expires_at <  CURRENT_DATE)           AS expired,
+                    COUNT(*) FILTER (WHERE status <> 'active')                   AS inactive
+                FROM licenses
+            """)
+            row = cur.fetchone()
+    return {'total': row[0], 'active': row[1], 'expired': row[2], 'inactive': row[3]}
+
+
+def search_licenses(keyword: str = '', status: str = 'all',
+                    limit: int = 50, offset: int = 0) -> dict:
+    """
+    ライセンス一覧ページ用。キーワード検索・状態絞り込み・ページ送りに対応。
+      keyword : ライセンスキー／メールアドレスの部分一致（大文字小文字は区別しない）
+      status  : all / active（有効）/ expired（期限切れ）/ inactive（無効化）
+    """
+    where, params = [], []
+    if keyword:
+        where.append("(license_key ILIKE %s OR email ILIKE %s)")
+        params += [f'%{keyword}%', f'%{keyword}%']
+    if status == 'active':
+        where.append("expires_at >= CURRENT_DATE AND status = 'active'")
+    elif status == 'expired':
+        where.append("expires_at < CURRENT_DATE")
+    elif status == 'inactive':
+        where.append("status <> 'active'")
+    where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
+
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(f"SELECT COUNT(*) AS c FROM licenses {where_sql}", params)
+            total = cur.fetchone()['c']
+            cur.execute(
+                f"""SELECT * FROM licenses {where_sql}
+                    ORDER BY created_at DESC LIMIT %s OFFSET %s""",
+                params + [limit, offset]
+            )
+            rows = cur.fetchall()
+
+    result = []
+    for r in rows:
+        d = dict(r)
+        if isinstance(d.get('expires_at'), date):
+            d['expires_at'] = d['expires_at'].isoformat()
+        if isinstance(d.get('created_at'), datetime):
+            d['created_at'] = d['created_at'].isoformat()
+        result.append(d)
+    return {'rows': result, 'total': total}
+
+
+# 決済に紐づくライセンスを削除できるようになるまでの日数（失効後）。
+# 短すぎると、支払い失敗のリトライ中（Polarは最大21日リトライする）に削除してしまい、
+# リトライ成功時に別のキーが新規発行されてしまう。
+PAID_LICENSE_DELETE_GRACE_DAYS = 30
+
+
+def _can_delete(row: dict, grace_days: int = PAID_LICENSE_DELETE_GRACE_DAYS):
+    """削除してよいライセンスかを判定する。(可否, 理由) を返す。"""
+    from datetime import timedelta
+    is_paid = bool(row.get('subscription_id'))
+    expires = row['expires_at']
+    if isinstance(expires, str):
+        expires = date.fromisoformat(expires)
+
+    if not is_paid:
+        # 手動発行（テスト用・キャンペーン等）はいつでも削除可
+        return True, ''
+    if expires >= date.today():
+        return False, '決済に紐づく有効なライセンスは削除できません（失効を待ってください）'
+    if expires > date.today() - timedelta(days=grace_days):
+        remain = (expires + timedelta(days=grace_days) - date.today()).days
+        return False, (f'決済に紐づくライセンスは失効から{grace_days}日経過後に削除できます'
+                       f'（あと{remain}日）')
+    return True, ''
+
+
+def delete_license(license_key: str) -> dict:
+    """
+    ライセンスを削除する（使用量の記録も併せて削除）。
+    決済に紐づくものは、誤って有効な契約を消さないよう条件付き。
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM licenses WHERE license_key = %s", (license_key,))
+            row = cur.fetchone()
+            if not row:
+                return {'success': False, 'message': 'ライセンスキーが見つかりません'}
+
+            ok, reason = _can_delete(dict(row))
+            if not ok:
+                return {'success': False, 'message': reason}
+
+            cur.execute("DELETE FROM usage_tracking WHERE license_key = %s", (license_key,))
+            cur.execute("DELETE FROM licenses WHERE license_key = %s", (license_key,))
+
+    print(f"[admin] license deleted: {license_key} ({row['email']})")
+    return {'success': True, 'license_key': license_key, 'email': row['email']}
+
+
+def delete_expired_licenses(older_than_days: int = 30) -> dict:
+    """
+    指定日数より前に失効したライセンスをまとめて削除する。
+    決済に紐づくものは PAID_LICENSE_DELETE_GRACE_DAYS の条件も満たす必要がある。
+    """
+    grace = max(int(older_than_days), PAID_LICENSE_DELETE_GRACE_DAYS)
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT * FROM licenses
+                    WHERE expires_at < CURRENT_DATE - make_interval(days => %s)""",
+                (int(older_than_days),)
+            )
+            candidates = [dict(r) for r in cur.fetchall()]
+
+            deleted = []
+            for row in candidates:
+                ok, _ = _can_delete(row, grace_days=grace)
+                if not ok:
+                    continue
+                cur.execute("DELETE FROM usage_tracking WHERE license_key = %s",
+                            (row['license_key'],))
+                cur.execute("DELETE FROM licenses WHERE license_key = %s",
+                            (row['license_key'],))
+                deleted.append({'license_key': row['license_key'], 'email': row['email']})
+
+    for d in deleted:
+        print(f"[admin] license deleted (bulk): {d['license_key']} ({d['email']})")
+    return {'success': True, 'deleted_count': len(deleted), 'deleted': deleted,
+            'skipped_count': len(candidates) - len(deleted)}
 
 
 def export_licenses_csv() -> str:
@@ -379,112 +472,6 @@ def activate_prompt(prompt_id: int) -> dict:
             cur.execute("UPDATE prompts SET is_active = 0")
             cur.execute("UPDATE prompts SET is_active = 1 WHERE id = %s", (prompt_id,))
     return {'success': True, 'activated_id': prompt_id}
-
-
-# ──────────────────────────────────────────
-# セレクター管理
-# ──────────────────────────────────────────
-def get_active_selectors(service: str = 'upwork') -> dict:
-    with get_conn() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """SELECT * FROM selectors WHERE service = %s AND is_active = 1
-                   ORDER BY created_at DESC LIMIT 1""",
-                (service,)
-            )
-            row = cur.fetchone()
-    if not row:
-        return {}
-    result = dict(row)
-    result['config'] = json.loads(result['config_json'])
-    if isinstance(result.get('created_at'), datetime):
-        result['created_at'] = result['created_at'].isoformat()
-    return result
-
-
-def get_all_selectors(service: str = 'upwork') -> list:
-    with get_conn() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                "SELECT * FROM selectors WHERE service = %s ORDER BY created_at DESC",
-                (service,)
-            )
-            rows = cur.fetchall()
-    result = []
-    for r in rows:
-        d = dict(r)
-        if isinstance(d.get('created_at'), datetime):
-            d['created_at'] = d['created_at'].isoformat()
-        result.append(d)
-    return result
-
-
-def create_selectors(version: str, service: str, config: dict, note: str = '') -> dict:
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """INSERT INTO selectors (version, service, config_json, is_active, note)
-                   VALUES (%s, %s, %s, 0, %s) RETURNING id""",
-                (version, service, json.dumps(config, ensure_ascii=False), note)
-            )
-            new_id = cur.fetchone()[0]
-    return {'id': new_id, 'version': version}
-
-
-def activate_selectors(selector_id: int, service: str = 'upwork') -> dict:
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE selectors SET is_active = 0 WHERE service = %s", (service,))
-            cur.execute("UPDATE selectors SET is_active = 1 WHERE id = %s", (selector_id,))
-    return {'success': True, 'activated_id': selector_id}
-
-
-# ──────────────────────────────────────────
-# 除外リスト管理
-# ──────────────────────────────────────────
-def get_excludes(category: str = 'skill_tags') -> list:
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT keyword FROM excludes WHERE category = %s AND is_active = 1",
-                (category,)
-            )
-            rows = cur.fetchall()
-    return [r[0] for r in rows]
-
-
-def get_all_excludes() -> list:
-    with get_conn() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT * FROM excludes ORDER BY category, keyword")
-            rows = cur.fetchall()
-    result = []
-    for r in rows:
-        d = dict(r)
-        if isinstance(d.get('created_at'), datetime):
-            d['created_at'] = d['created_at'].isoformat()
-        result.append(d)
-    return result
-
-
-def add_exclude(category: str, keyword: str) -> dict:
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO excludes (category, keyword) VALUES (%s,%s)",
-                    (category, keyword)
-                )
-        return {'success': True}
-    except Exception as e:
-        return {'success': False, 'message': str(e)}
-
-
-def delete_exclude(exclude_id: int) -> dict:
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM excludes WHERE id = %s", (exclude_id,))
-    return {'success': True}
 
 
 # ──────────────────────────────────────────
@@ -629,17 +616,16 @@ def delete_file(file_id: int) -> dict:
 # ──────────────────────────────────────────
 def get_license_with_config(license_key: str) -> dict:
     """
-    ライセンス認証と一緒に、プロンプト・セレクター・除外リスト・AI設定を返す
+    ライセンス認証結果を返す（Webログイン用の軽量版）。
+
+    リデザイン前は採点プロンプト全文やDOMセレクターも返していたが、
+    採点はサーバー側（/evaluate）で完結するためフロントには不要であり、
+    プロンプトが有効キー1本で外部から読めてしまうため返却をやめた。
     """
     lic = validate_license(license_key)
     if not lic.get('valid'):
         return {'status': 'invalid', **lic}
 
-    prompt    = get_active_prompt()
-    selectors = get_active_selectors('upwork')
-    excludes  = get_excludes('skill_tags')
-    ai_set    = get_ai_settings()
-    ext_ver   = get_latest_version('extension')
     excel_ver = get_latest_version('excel')
 
     return {
@@ -650,23 +636,7 @@ def get_license_with_config(license_key: str) -> dict:
             'expires_at': lic['expires_at'],
             'days_left':  lic['days_left'],
         },
-        'config': {
-            'prompt': {
-                'version':  prompt.get('version', ''),
-                'name':     prompt.get('name', ''),
-                'template': prompt.get('template', ''),
-            },
-            'selectors': {
-                'version': selectors.get('version', ''),
-                'service': selectors.get('service', 'upwork'),
-                'config':  selectors.get('config', {}),
-            },
-            'exclude_skills': excludes,
-            'ai_settings': ai_set,
-        },
         'versions': {
-            'extension': ext_ver.get('version', '1.0.0'),
-            'excel':     excel_ver.get('version', '1.0.0'),
+            'excel': excel_ver.get('version', '1.0.0'),
         },
-        'cache_expires_in_sec': 3600,
     }

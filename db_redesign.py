@@ -30,6 +30,9 @@ def migrate():
                     period_month      TEXT,               -- 'YYYY-MM'
                     month_count       INTEGER NOT NULL DEFAULT 0
                 );
+                -- プラン変更時の繰り越し用。指定した月に限り、この値を月間上限として使う。
+                ALTER TABLE usage_tracking ADD COLUMN IF NOT EXISTS cap_override       INTEGER;
+                ALTER TABLE usage_tracking ADD COLUMN IF NOT EXISTS cap_override_month TEXT;
 
                 -- 広告欄（1行だけ使う。未設定ならフロントに表示されない）
                 CREATE TABLE IF NOT EXISTS promo (
@@ -128,4 +131,101 @@ def record_usage(license_key: str, now: datetime, period_month: str, month_count
                     month_count       = EXCLUDED.month_count
                 """,
                 (license_key, now, period_month, month_count),
+            )
+
+
+def refund_usage(license_key: str, period_month: str) -> None:
+    """
+    採点が失敗した時に、消費した当月カウントを1つ戻す。
+    月をまたいだ後の巻き戻しを防ぐため、period_month が一致する場合のみ減算する。
+    最終実行日時（連打制限）は意図的に戻さない：失敗を繰り返した時に
+    Gemini へ連続リクエストが飛ぶのを避けるため。
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE usage_tracking
+                   SET month_count = GREATEST(month_count - 1, 0)
+                 WHERE license_key = %s AND period_month = %s
+                """,
+                (license_key, period_month),
+            )
+
+
+# ── プラン変更（上限の繰り越しを含む） ──────────────────────
+def apply_plan_change(license_key: str, new_plan: str, now: datetime = None) -> dict:
+    """
+    ライセンスのプランを変更する。有効期限は変更しない。
+
+    上位プランへの変更時は、旧プランで使い残した回数を新プランの上限に加算する。
+      例）Standard(100回)で80回使用 → Proへ変更
+          当月の実効上限 = 100 + 300 = 400、使用済み80 → 残り320回
+
+    この繰り越しは「変更した月」に限って有効で、翌月からは新プランの上限に戻る。
+    下位プランへの変更（ダウングレード）では繰り越しを行わない。
+    """
+    from plans import plan_monthly_cap          # 循環importを避けるため関数内でimport
+    from database import update_license_plan
+
+    now = now or datetime.now(timezone.utc)
+    current_month = now.strftime("%Y-%m")
+
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT plan FROM licenses WHERE license_key = %s", (license_key,))
+            row = cur.fetchone()
+    if not row:
+        return {"success": False, "message": "ライセンスキーが見つかりません"}
+
+    old_plan = row["plan"]
+    if old_plan == new_plan:
+        return {"success": False, "message": f"すでに {new_plan} です"}
+
+    old_cap = plan_monthly_cap(old_plan)
+    new_cap = plan_monthly_cap(new_plan)
+
+    # 当月の使用回数（月が変わっていれば0扱い）
+    usage = get_usage(license_key)
+    used = usage["month_count"] if usage and usage.get("period_month") == current_month else 0
+
+    result = update_license_plan(license_key, new_plan)
+    if not result.get("success"):
+        return result
+
+    carried_over = 0
+    effective_cap = new_cap
+
+    if new_cap > old_cap:
+        # 上位プランへの変更：旧プランの残り回数を繰り越す
+        carried_over = max(old_cap - used, 0)
+        effective_cap = new_cap + carried_over + used   # 使用済み分を足して実効上限にする
+        _set_cap_override(license_key, current_month, effective_cap)
+
+    result.update({
+        "old_plan":      old_plan,
+        "new_plan":      new_plan,
+        "used":          used,
+        "carried_over":  carried_over,
+        "monthly_cap":   effective_cap,
+        "remaining":     max(effective_cap - used, 0),
+        "period_month":  current_month,
+    })
+    return result
+
+
+def _set_cap_override(license_key: str, period_month: str, cap: int) -> None:
+    """指定した月に限り有効な月間上限を保存する（プラン変更の繰り越し用）。"""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO usage_tracking
+                       (license_key, period_month, month_count, cap_override, cap_override_month)
+                VALUES (%s, %s, 0, %s, %s)
+                ON CONFLICT (license_key) DO UPDATE SET
+                    cap_override       = EXCLUDED.cap_override,
+                    cap_override_month = EXCLUDED.cap_override_month
+                """,
+                (license_key, period_month, cap, period_month),
             )
