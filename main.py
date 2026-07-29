@@ -617,7 +617,7 @@ async function extend(key) {{
 
 async function changePlan(key, id) {{
   const plan = document.getElementById('plan-' + id).value;
-  if (!confirm(key + ' のプランを「' + plan + '」に変更しますか？\n\n・有効期限は変わりません\n・上位プランへの変更時は、旧プランの残り回数を繰り越します')) {{
+  if (!confirm(key + ' のプランを「' + plan + '」に変更しますか？\\n\\n・有効期限は変わりません\\n・上位プランへの変更時は、旧プランの残り回数を繰り越します')) {{
     location.reload();
     return;
   }}
@@ -629,12 +629,12 @@ async function changePlan(key, id) {{
   const data = await res.json();
   if (res.ok && data.success) {{
     let msg = 'プランを変更しました：' + data.old_plan + ' → ' + data.new_plan;
-    msg += '\n有効期限は変更していません。';
+    msg += '\\n有効期限は変更していません。';
     if (data.carried_over > 0) {{
-      msg += '\n\n旧プランの残り ' + data.carried_over + ' 回を繰り越しました。';
+      msg += '\\n\\n旧プランの残り ' + data.carried_over + ' 回を繰り越しました。';
     }}
     if (data.remaining != null) {{
-      msg += '\n今月の残り回数：' + data.remaining + ' 回（使用済み ' + data.used + ' 回）';
+      msg += '\\n今月の残り回数：' + data.remaining + ' 回（使用済み ' + data.used + ' 回）';
     }}
     alert(msg);
     location.reload();
@@ -927,7 +927,7 @@ async function extend(key) {{
 
 async function changePlan(key, id) {{
   const plan = document.getElementById('plan-' + id).value;
-  if (!confirm(key + ' のプランを「' + plan + '」に変更しますか？\n\n・有効期限は変わりません\n・上位プランへの変更時は、旧プランの残り回数を繰り越します')) {{
+  if (!confirm(key + ' のプランを「' + plan + '」に変更しますか？\\n\\n・有効期限は変わりません\\n・上位プランへの変更時は、旧プランの残り回数を繰り越します')) {{
     location.reload(); return;
   }}
   const res = await fetch('/admin/license/plan', {{
@@ -937,29 +937,29 @@ async function changePlan(key, id) {{
   const data = await res.json();
   if (res.ok && data.success) {{
     let msg = 'プランを変更しました：' + data.old_plan + ' → ' + data.new_plan;
-    msg += '\n有効期限は変更していません。';
-    if (data.carried_over > 0) {{ msg += '\n\n旧プランの残り ' + data.carried_over + ' 回を繰り越しました。'; }}
-    if (data.remaining != null) {{ msg += '\n今月の残り回数：' + data.remaining + ' 回（使用済み ' + data.used + ' 回）'; }}
+    msg += '\\n有効期限は変更していません。';
+    if (data.carried_over > 0) {{ msg += '\\n\\n旧プランの残り ' + data.carried_over + ' 回を繰り越しました。'; }}
+    if (data.remaining != null) {{ msg += '\\n今月の残り回数：' + data.remaining + ' 回（使用済み ' + data.used + ' 回）'; }}
     alert(msg);
   }} else {{ alert('エラー: ' + (data.message || '不明なエラー')); }}
   location.reload();
 }}
 
 async function delLicense(key, email) {{
-  if (!confirm('このライセンスを削除しますか？\n\n' + key + '\n' + email +
-               '\n\n削除すると元に戻せません。')) return;
+  if (!confirm('このライセンスを削除しますか？\\n\\n' + key + '\\n' + email +
+               '\\n\\n削除すると元に戻せません。')) return;
   const res = await fetch('/admin/license/delete', {{
     method: 'POST', headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{license_key: key}}),
   }});
   const data = await res.json();
   if (res.ok && data.success) {{ alert('削除しました：' + key); location.reload(); }}
-  else {{ alert('削除できませんでした\n\n' + (data.message || '不明なエラー')); }}
+  else {{ alert('削除できませんでした\\n\\n' + (data.message || '不明なエラー')); }}
 }}
 
 async function delExpired() {{
   const days = document.getElementById('del-days').value;
-  if (!confirm('失効から' + days + '日以上経過したライセンスをまとめて削除します。\n\n' +
+  if (!confirm('失効から' + days + '日以上経過したライセンスをまとめて削除します。\\n\\n' +
                '元に戻せません。CSVバックアップは取得済みですか？')) return;
   if (!confirm('本当に実行しますか？（最終確認）')) return;
   const msg = document.getElementById('del-msg');
