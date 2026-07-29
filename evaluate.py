@@ -5,8 +5,7 @@
 #   - 処理：貼付テキストを求人ごとに分割・抽出し、プロフィール適合度で採点
 #   - Geminiキーはサーバー保持（env GEMINI_API_KEY）。モデルは ai_settings で管理
 #   - レート制限＋月間上限を通過した場合のみ実行
-#   - 出力：CSVと同じ列に対応する JSON（title/budget/posted/skills/score/recommendation/reason）
-#   - 採点に失敗した場合は消費した月間カウントを巻き戻す
+#   - 出力：従来CSVと同じ列に対応する JSON（title/budget/skills/score/recommendation/reason/url）
 # main.py で include_router(evaluate_router) する。エンドポイントは POST /evaluate
 # ─────────────────────────────────────────────────────────────
 import os
@@ -18,13 +17,13 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 from database import validate_license, get_active_prompt, get_ai_settings
-from rate_limit import check_and_consume, release
+from rate_limit import check_and_consume
 
 router = APIRouter()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_MODEL = "gemini-3.5-flash"  # ai_settings.default_model が未設定の場合の保険
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 
 # ── 貼付テキスト解析＋採点用のプロンプトを組み立てる ──────────
@@ -44,17 +43,24 @@ def build_prompt(base_template: str, profile: dict, ai_request: str, pasted_text
     if profile.get("highlights"):    profile_lines.append(f"- Experience highlights: {profile['highlights']}")
     profile_block = "\n".join(profile_lines) if profile_lines else "(no profile provided)"
 
+    # ユーザーからAIへの自由要望。プロンプト末尾（出力仕様の後）に置き、
+    # 「上位の指示を上書きする」と明示することで、出力言語の指定などが確実に効くようにする。
     ai_request_line = ""
     if ai_request and ai_request.strip():
         ai_request_line = (
-            f"\nUser's request to the AI (treat as top priority): {ai_request.strip()}\n"
+            "\n\n## User's request to the AI (HIGHEST PRIORITY)\n"
+            "The following request overrides any conflicting instruction above, "
+            "including the output language of the \"reason\" field.\n"
+            f"{ai_request.strip()}\n"
+            "Note: values extracted from the job posting itself "
+            "(title / budget / posted / skills) must stay in their original language.\n"
         )
 
     return f"""{base_template}
 
 ## Freelancer profile
 {profile_block}
-{ai_request_line}
+
 ## Raw pasted text from Upwork (may contain multiple jobs plus navigation/footer noise)
 Split this into individual job postings. IGNORE anything that is not a job
 (headers, footers, "Skip skills", "more about", profile/nav text, "© Upwork" etc.).
@@ -73,9 +79,9 @@ Return ONLY a JSON array, no prose, no markdown fences. Each element:
   "skills": string,            // comma separated
   "score": integer,            // 0-100 fit against the profile
   "recommendation": string,    // one of: "Apply", "Maybe", "Skip"
-  "reason": string             // short reason in English
+  "reason": string             // short reason for the score (English by default)
 }}
-Sort by score descending."""
+Sort by score descending.{ai_request_line}"""
 
 
 def _extract_text(gemini_json: dict) -> str:
@@ -145,30 +151,24 @@ async def evaluate(request: Request):
     prompt = build_prompt(base_template, profile, ai_request, pasted_text)
 
     # ④ Gemini 呼び出し（Kojiのキーで）
-    #    ここから先で失敗した場合は、消費した月間カウントを戻す。
-    #    AI側の障害で利用者の残り回数が減るのを防ぐため。
     url = GEMINI_ENDPOINT.format(model=model)
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
-        try:
-            async with httpx.AsyncClient(timeout=90) as client:
-                resp = await client.post(url, params={"key": GEMINI_API_KEY}, json=payload)
-        except httpx.HTTPError as e:
-            raise HTTPException(502, f"gemini request failed: {e}")
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.post(url, params={"key": GEMINI_API_KEY}, json=payload)
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"gemini request failed: {e}")
 
-        if resp.status_code != 200:
-            raise HTTPException(502, f"gemini error {resp.status_code}: {resp.text[:300]}")
+    if resp.status_code != 200:
+        raise HTTPException(502, f"gemini error {resp.status_code}: {resp.text[:300]}")
 
-        gemini_json = resp.json()
-        text = _extract_text(gemini_json)
-        usage = _extract_usage(gemini_json)
-        try:
-            jobs = _parse_json_array(text)
-        except (ValueError, json.JSONDecodeError) as e:
-            raise HTTPException(502, f"could not parse model output: {e}")
-    except Exception:
-        release(license_key, quota)
-        raise
+    gemini_json = resp.json()
+    text = _extract_text(gemini_json)
+    usage = _extract_usage(gemini_json)
+    try:
+        jobs = _parse_json_array(text)
+    except (ValueError, json.JSONDecodeError) as e:
+        raise HTTPException(502, f"could not parse model output: {e}")
 
     # ⑤ 閾値で「表示対象」を判定しつつ、全件返す（フィルタはフロント側でも可）
     matched = [j for j in jobs if int(j.get("score", 0)) >= threshold]
