@@ -84,15 +84,34 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
 # ══════════════════════════════════════════
 # 基本エンドポイント
 # ══════════════════════════════════════════
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    # リデザイン: フロント(index.html)を配信。見つからなければ簡易表示。
-    for path in ("frontend/index.html", "index.html"):
+def _serve_html(*candidates: str, fallback: str = "<h1>Not found</h1>",
+                status: int = 404) -> HTMLResponse:
+    """候補パスを順に探して最初に見つかったHTMLを返す。見つからなければ fallback。"""
+    for path in candidates:
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 return HTMLResponse(content=f.read())
-    return HTMLResponse(
-        content="<h1>Upwork JobSearch</h1><p>frontend (index.html) not found.</p>"
+    return HTMLResponse(content=fallback, status_code=status)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    # トップページ: サービス紹介LP。SNSからの流入先はここ。
+    # 初見の訪問者にいきなりログイン画面を見せないための入口。
+    return _serve_html(
+        "frontend/landing.html", "landing.html",
+        fallback="<h1>Upwork JobSearch</h1><p>landing.html not found.</p>",
+        status=200,
+    )
+
+
+@app.get("/app", response_class=HTMLResponse)
+async def app_page():
+    # アプリ本体(index.html)。LPを / に置いたため、旧トップはここへ移動。
+    return _serve_html(
+        "frontend/index.html", "index.html",
+        fallback="<h1>Upwork JobSearch</h1><p>frontend (index.html) not found.</p>",
+        status=200,
     )
 
 
