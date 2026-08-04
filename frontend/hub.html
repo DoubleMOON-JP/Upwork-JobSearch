@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JobSearch — AI triage for freelance job boards</title>
+<meta name="description" content="Paste job listings from the boards you already use. Every listing comes back scored 0–100 against your profile, with a reason. One licence covers every supported board." />
+
+<meta property="og:title" content="JobSearch — AI triage for freelance job boards" />
+<meta property="og:description" content="Paste job listings from the boards you already use. Every listing comes back scored 0–100 against your profile, with a reason." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://jobsearch.doublemoon.biz/" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#16233F; --ink-soft:#2C3A57; --paper:#EEF1F5; --surface:#FFFFFF; --line:#E1E6ED;
+    --brand:#C55A11; --brand-dark:#A2470B; --muted:#6B7280;
+    --apply:#1E7A46; --apply-bg:#E7F3EC; --apply-line:#B7DCC4;
+    --radius:14px; --radius-sm:9px;
+    --shadow:0 1px 2px rgba(22,35,63,.06), 0 8px 24px rgba(22,35,63,.06);
+    --font-display:"Space Grotesk", system-ui, sans-serif;
+    --font-body:"Inter", system-ui, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--font-body); color:var(--ink); background:var(--paper);
+       -webkit-font-smoothing:antialiased; line-height:1.6}
+  h1,h2,h3{font-family:var(--font-display); font-weight:600; letter-spacing:-.02em; margin:0}
+  a{color:var(--brand-dark)}
+  .wrap{max-width:1000px; margin:0 auto; padding:0 clamp(16px,4vw,40px)}
+
+  header{background:var(--ink); color:#fff; padding:14px clamp(16px,4vw,40px);
+         display:flex; align-items:center; gap:9px; position:sticky; top:0; z-index:20}
+  header .spark{color:var(--brand); font-size:18px; line-height:1}
+  header h1{font-size:16px; color:#fff}
+  header .tag{font-size:12px; color:#9FB0CC}
+  header nav{margin-left:auto; display:flex; align-items:center; gap:20px}
+  header nav a{color:#9FB0CC; font-size:12.5px; text-decoration:none}
+  header nav a:hover{color:#fff; text-decoration:underline}
+  header nav a.cta{color:#fff; background:var(--brand); padding:7px 14px; border-radius:999px;
+                   font-weight:600; font-family:var(--font-display); font-size:12.5px}
+  header nav a.cta:hover{background:var(--brand-dark); text-decoration:none}
+  @media(max-width:620px){ header .tag{display:none} }
+
+  .hero{background:linear-gradient(180deg,#FFFFFF,#FBFCFD); border-bottom:1px solid var(--line);
+        padding:clamp(48px,7vw,84px) 0; text-align:center}
+  .eyebrow{display:inline-block; font-family:var(--font-display); font-size:11px; font-weight:700;
+           letter-spacing:.1em; text-transform:uppercase; color:var(--brand);
+           background:#FBEDE3; border:1px solid #F0D3BE; padding:5px 11px; border-radius:999px}
+  .hero h2{font-size:clamp(29px,4.4vw,45px); line-height:1.15; margin:18px auto 0; max-width:16em}
+  .hero h2 em{font-style:normal; color:var(--brand)}
+  .hero p{font-size:clamp(15px,1.6vw,17px); color:var(--ink-soft); margin:18px auto 0; max-width:38em}
+
+  section{padding:clamp(46px,6.5vw,80px) 0}
+  .sec-head{max-width:34em; margin:0 0 clamp(26px,4vw,40px)}
+  .sec-head .kicker{font-family:var(--font-display); font-size:11px; font-weight:600;
+                    letter-spacing:.14em; text-transform:uppercase; color:var(--brand); margin:0 0 10px}
+  .sec-head h3{font-size:clamp(22px,3vw,30px); line-height:1.22}
+  .sec-head p{color:var(--ink-soft); margin:13px 0 0; font-size:15px}
+
+  .boards{display:grid; grid-template-columns:repeat(2,1fr); gap:clamp(13px,2.2vw,20px)}
+  @media(max-width:760px){ .boards{grid-template-columns:1fr} }
+  .board{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+         padding:22px 22px 24px; display:flex; flex-direction:column; gap:9px;
+         text-decoration:none; color:inherit; transition:border-color .15s, transform .15s, box-shadow .15s}
+  .board.live:hover{border-color:var(--brand); box-shadow:var(--shadow); transform:translateY(-2px)}
+  .board .top{display:flex; align-items:center; gap:10px}
+  .board h4{font-family:var(--font-display); font-weight:600; font-size:17px; margin:0; flex:1}
+  .board p{margin:0; font-size:13.5px; color:var(--ink-soft)}
+  .board .go{font-family:var(--font-display); font-weight:600; font-size:13px; color:var(--brand); margin-top:4px}
+  .pill{font-family:var(--font-display); font-size:10px; font-weight:700; letter-spacing:.09em;
+        text-transform:uppercase; padding:4px 9px; border-radius:999px; white-space:nowrap}
+  .pill.live{background:var(--apply-bg); color:var(--apply); border:1px solid var(--apply-line)}
+  .pill.soon{background:#F1F3F7; color:var(--muted); border:1px solid var(--line)}
+  .board.soon{opacity:.72}
+
+  .band{background:var(--surface); border-block:1px solid var(--line)}
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:clamp(14px,2.4vw,22px)}
+  @media(max-width:820px){ .steps{grid-template-columns:1fr} }
+  .step{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:22px}
+  .step .n{font-family:var(--font-display); font-weight:700; font-size:12px; color:#fff;
+           background:var(--brand); width:24px; height:24px; border-radius:50%;
+           display:flex; align-items:center; justify-content:center; margin-bottom:14px}
+  .step h4{font-family:var(--font-display); font-weight:600; font-size:16px; margin:0 0 7px}
+  .step p{margin:0; font-size:13.5px; color:var(--ink-soft)}
+
+  .licence{background:var(--apply-bg); border:1px solid var(--apply-line); border-radius:var(--radius);
+           padding:26px clamp(20px,3vw,30px); display:grid; grid-template-columns:auto 1fr;
+           gap:18px; align-items:start}
+  .licence .mark{color:var(--apply); font-size:22px; line-height:1.2}
+  .licence h4{font-family:var(--font-display); font-weight:600; color:var(--apply); font-size:16px; margin:0 0 8px}
+  .licence p{margin:0; font-size:13.5px; color:#245C3D}
+
+  footer{background:var(--ink); color:#9FB0CC; padding:36px 0 42px; font-size:12.5px}
+  footer .cols{display:flex; flex-wrap:wrap; gap:20px 32px; align-items:center}
+  footer a{color:#9FB0CC; text-decoration:none}
+  footer a:hover{color:#fff; text-decoration:underline}
+  footer .legal{width:100%; color:#6C7C99; border-top:1px solid rgba(255,255,255,.1);
+                padding-top:18px; margin-top:8px; line-height:1.7}
+
+  :where(a,button):focus-visible{outline:2px solid var(--brand); outline-offset:3px; border-radius:4px}
+  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} *{transition:none !important} }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="spark">⚡</span>
+  <h1>JobSearch</h1>
+  <span class="tag">AI job triage</span>
+  <nav>
+    <a href="#boards">Supported boards</a>
+    <a href="/app" class="cta">Open the app</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <span class="eyebrow">For freelancers</span>
+    <h2>Every job post, scored <em>before</em> you write the proposal.</h2>
+    <p>
+      Copy listings from the job board you already use. Paste them in. Each one comes back
+      scored 0&ndash;100 against your own profile, with the reason behind the score.
+      One licence covers every supported board.
+    </p>
+  </div>
+</div>
+
+<section id="boards">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kicker">Supported boards</p>
+      <h3>Pick where you're job hunting.</h3>
+      <p>Each board has its own listing format, so scoring is tuned per board. Your profile and licence stay the same across all of them.</p>
+    </div>
+    <div class="boards">
+
+      <a class="board live" href="/for/upwork">
+        <div class="top">
+          <h4>Upwork</h4>
+          <span class="pill live">Available</span>
+        </div>
+        <p>Hourly and fixed-price contracts. Scoring reads payment verification, client spend and proposal counts.</p>
+        <div class="go">See how it works →</div>
+      </a>
+
+      <div class="board soon">
+        <div class="top">
+          <h4>Freelancer.com</h4>
+          <span class="pill soon">Planned</span>
+        </div>
+        <p>Bid-based projects across development, design and writing.</p>
+      </div>
+
+      <div class="board soon">
+        <div class="top">
+          <h4>Guru.com</h4>
+          <span class="pill soon">Planned</span>
+        </div>
+        <p>Long-running marketplace with a strong professional-services base.</p>
+      </div>
+
+      <div class="board soon">
+        <div class="top">
+          <h4>We Work Remotely / Remote OK</h4>
+          <span class="pill soon">Planned</span>
+        </div>
+        <p>Remote-only boards, free to browse, heavy on engineering and design roles.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kicker">How it works</p>
+      <h3>Three steps, about a minute.</h3>
+      <p>You stay on the job board the whole time. Nothing connects to your account and nothing runs in the background.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="n">1</div>
+        <h4>Describe yourself once</h4>
+        <p>Skills, minimum rate, keywords you want and keywords you don't. Saved in your browser, reused on every board.</p>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <h4>Paste what you're looking at</h4>
+        <p>Select the job list, copy, paste. Menus, footers and banners are stripped out automatically.</p>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <h4>Work the top of the list</h4>
+        <p>Scores, verdicts and reasons, sorted highest first. Export to CSV when you want a record.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="licence">
+      <div class="mark">🔑</div>
+      <div>
+        <h4>One licence, every board</h4>
+        <p>Your monthly evaluations are shared across all supported boards — spend them wherever you're searching that week. No separate purchase per board, and your profile carries over automatically.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap cols">
+    <a href="/"><strong style="color:#fff; font-family:var(--font-display)">JobSearch</strong></a>
+    <a href="/for/upwork">For Upwork</a>
+    <a href="/app">Open the app</a>
+    <a href="/privacy">Privacy</a>
+    <a href="mailto:hello@doublemoon.biz">hello@doublemoon.biz</a>
+    <p class="legal">
+      DoubleMoon Trading Co., Ltd. — Yashio, Saitama, Japan.<br />
+      Upwork, Freelancer.com, Guru.com, We Work Remotely and Remote OK are trademarks of their
+      respective owners. This service is independent and is not affiliated with, endorsed by,
+      or sponsored by any of them.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
