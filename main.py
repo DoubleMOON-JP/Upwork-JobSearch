@@ -3,12 +3,13 @@ main.py - Upwork JobSearch 本番サーバー v2
 ライセンス認証＋プロンプト/セレクター配信型
 """
 import os
+import re
 import json
 import secrets as sec_module
 from datetime import datetime
 
 from fastapi import FastAPI, Request, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import JSONResponse, HTMLResponse, Response
+from fastapi.responses import JSONResponse, HTMLResponse, Response, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
@@ -38,7 +39,10 @@ migrate()   # リデザイン: subscription_id/provider 列・usage_tracking 表
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://upwork.doublemoon.biz"],  # 自社ドメインのみ許可（将来の別ブランドは別サービスで独立管理）
+    allow_origins=[
+        "https://jobsearch.doublemoon.biz",   # 新・正式ドメイン
+        "https://upwork.doublemoon.biz",      # 旧ドメイン（リダイレクト移行期間中のみ。落ち着いたら削除可）
+    ],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -50,7 +54,13 @@ app.include_router(payments_router)   # POST /webhook/{provider}  (例: /webhook
 # 環境変数
 ADMIN_USER     = os.environ.get("ADMIN_USER",     "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
-BASE_URL       = os.environ.get("BASE_URL",       "https://upwork.doublemoon.biz")
+BASE_URL       = os.environ.get("BASE_URL",       "https://jobsearch.doublemoon.biz")
+
+# 旧ドメイン。アクセスが来たら BASE_URL 側へ恒久リダイレクトする。
+# サイト別サブドメインを廃止し、1オリジン＋パス分割に統一したため。
+LEGACY_HOSTS = {
+    "upwork.doublemoon.biz": "/for/upwork",   # 旧トップ → Upwork向けLPへ
+}
 
 # 管理画面からアップロードできる配布ファイルの種類と Content-Type。
 # （Chrome拡張はリデザインで廃止したため excel のみ）
@@ -84,6 +94,24 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
 # ══════════════════════════════════════════
 # 基本エンドポイント
 # ══════════════════════════════════════════
+@app.middleware("http")
+async def redirect_legacy_hosts(request: Request, call_next):
+    """旧サブドメイン(upwork.doublemoon.biz等)へのアクセスを新ドメインへ転送。
+    既存のブックマーク・SNS投稿・外部リンクを切らさないための措置。"""
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    if host in LEGACY_HOSTS:
+        path = request.url.path
+        # 旧トップ("/")だけは、そのサイト向けLPへ振り替える
+        target = LEGACY_HOSTS[host] if path == "/" else path
+        url = f"{BASE_URL}{target}"
+        if request.url.query:
+            url += f"?{request.url.query}"
+        # GET/HEAD は301。それ以外はメソッドとボディを保つ308を使う。
+        code = 301 if request.method in ("GET", "HEAD") else 308
+        return RedirectResponse(url, status_code=code)
+    return await call_next(request)
+
+
 def _serve_html(*candidates: str, fallback: str = "<h1>Not found</h1>",
                 status: int = 404) -> HTMLResponse:
     """候補パスを順に探して最初に見つかったHTMLを返す。見つからなければ fallback。"""
@@ -96,21 +124,33 @@ def _serve_html(*candidates: str, fallback: str = "<h1>Not found</h1>",
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
-    # トップページ: サービス紹介LP。SNSからの流入先はここ。
-    # 初見の訪問者にいきなりログイン画面を見せないための入口。
+    # トップページ: 全サービス共通のハブ。各ジョブサイト向けLPへの入口。
     return _serve_html(
-        "frontend/landing.html", "landing.html",
-        fallback="<h1>Upwork JobSearch</h1><p>landing.html not found.</p>",
+        "frontend/hub.html", "hub.html",
+        fallback="<h1>JobSearch</h1><p>hub.html not found.</p>",
         status=200,
+    )
+
+
+@app.get("/for/{site}", response_class=HTMLResponse)
+async def landing_page(site: str):
+    """ジョブサイト別のLP。frontend/landing_{site}.html を配信する。
+    新サイト追加時はHTMLを1枚置くだけでよく、コード変更は不要。"""
+    # パストラバーサル防止（英小文字・数字・ハイフンのみ許可）
+    if not re.fullmatch(r"[a-z0-9-]{1,32}", site):
+        return HTMLResponse(content="<h1>Not found</h1>", status_code=404)
+    return _serve_html(
+        f"frontend/landing_{site}.html", f"landing_{site}.html",
+        fallback="<h1>Not found</h1>", status=404,
     )
 
 
 @app.get("/app", response_class=HTMLResponse)
 async def app_page():
-    # アプリ本体(index.html)。LPを / に置いたため、旧トップはここへ移動。
+    # アプリ本体(index.html)。1ライセンスで全対応サイトを利用する単一オリジン。
     return _serve_html(
         "frontend/index.html", "index.html",
-        fallback="<h1>Upwork JobSearch</h1><p>frontend (index.html) not found.</p>",
+        fallback="<h1>JobSearch</h1><p>frontend (index.html) not found.</p>",
         status=200,
     )
 
