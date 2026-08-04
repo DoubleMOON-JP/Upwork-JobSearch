@@ -1,3 +1,0 @@
-# 既存 requirements.txt に追記する分（リデザイン用）
-# httpx は既存にあり（0.27.2）→ サーバー側Gemini呼び出しで流用
-polar-sdk            # Polar 公式Python SDK（Webhook署名検証・API）
