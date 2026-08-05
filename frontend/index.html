@@ -312,13 +312,13 @@
       <div class="panel">
         <div class="panel-head">
           <span class="eyebrow">Step 1</span>
-          <h2>Paste jobs from Upwork</h2>
+          <h2>{{PASTE_HEADING}}</h2>
         </div>
         <div class="panel-body">
           <div class="field">
             <label for="pasteBox">Copied job listings</label>
-            <textarea id="pasteBox" rows="9" placeholder="Go to Upwork's job search page (not Saved Jobs or Invites) and sort by &quot;Most Recent&quot;. Press Ctrl/⌘+A to select the page, then Ctrl/⌘+C to copy. Paste it here — multiple pages are fine, noise is ignored."></textarea>
-            <p class="hint">Tip: use the job search page, not Saved Jobs or Invites.</p>
+            <textarea id="pasteBox" rows="9" placeholder="{{PASTE_PLACEHOLDER}}"></textarea>
+            <p class="hint">{{PASTE_TIP}}</p>
           </div>
           <div class="row2 field" style="align-items:end">
             <div>
@@ -377,8 +377,12 @@
 <script>
 "use strict";
 
-// 同一オリジンのFastAPIを叩く。別ホスト配信なら例: "https://upwork.doublemoon.biz"
+// 同一オリジンのFastAPIを叩く。別ホスト配信なら例: "https://jobsearch.doublemoon.biz"
 const API_BASE = "";
+// サーバー(/app/{site})が差し込む。どの求人サイト向けの画面かを表す。
+const SITE_ID = "{{SITE_ID}}";
+const SITE_LABEL = "{{SITE_LABEL}}";
+const CSV_FILENAME = "{{CSV_FILENAME}}";
 
 // ── safe storage (localStorage が使えない環境ではメモリにフォールバック) ──
 const mem = {};
@@ -553,6 +557,7 @@ async function runEvaluate(){
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({
         license_key: session.license_key,
+        site: SITE_ID,
         pasted_text: pasted,
         profile: prof,
         ai_request: $("p_ai_request").value.trim(),
@@ -685,7 +690,7 @@ function downloadCsv(){
   const esc = v => `"${String(v).replace(/"/g,'""')}"`;
   const lines = [HEADERS.join(",")].concat(jobRows().map(r=>r.map(esc).join(",")));
   const blob = new Blob(["\uFEFF"+lines.join("\r\n")], {type:"text/csv;charset=utf-8"});
-  triggerDownload(blob, "upwork_result.csv");
+  triggerDownload(blob, CSV_FILENAME);
 }
 function triggerDownload(blob, name){
   const url = URL.createObjectURL(blob);
