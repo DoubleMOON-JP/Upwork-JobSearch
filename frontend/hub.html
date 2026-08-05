@@ -72,6 +72,12 @@
   .board h4{font-family:var(--font-display); font-weight:600; font-size:17px; margin:0; flex:1}
   .board p{margin:0; font-size:13.5px; color:var(--ink-soft)}
   .board .go{font-family:var(--font-display); font-weight:600; font-size:13px; color:var(--brand); margin-top:4px}
+  /* 稼働中カードは「すぐ使う」と「まず読む」の2導線を持つ */
+  .board .go-row{display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin-top:6px}
+  .board .go-row .go{margin-top:0; text-decoration:none}
+  .board .go-primary{background:var(--brand); color:#fff; padding:8px 14px; border-radius:999px}
+  .board .go-primary:hover{background:var(--brand-dark)}
+  .board .go-secondary:hover{text-decoration:underline}
   .pill{font-family:var(--font-display); font-size:10px; font-weight:700; letter-spacing:.09em;
         text-transform:uppercase; padding:4px 9px; border-radius:999px; white-space:nowrap}
   .pill.live{background:var(--apply-bg); color:var(--apply); border:1px solid var(--apply-line)}
@@ -114,7 +120,7 @@
   <span class="tag">AI job triage</span>
   <nav>
     <a href="#boards">Supported boards</a>
-    <a href="/app/upwork" class="cta">Open the app</a>
+    <a href="#boards" class="cta">Open the app</a>
   </nav>
 </header>
 
@@ -139,14 +145,17 @@
     </div>
     <div class="boards">
 
-      <a class="board live" href="/for/upwork">
+      <div class="board live">
         <div class="top">
           <h4>Upwork</h4>
           <span class="pill live">Available</span>
         </div>
         <p>Hourly and fixed-price contracts. Scoring reads payment verification, client spend and proposal counts.</p>
-        <div class="go">See how it works →</div>
-      </a>
+        <div class="go-row">
+          <a class="go go-primary" href="/app/upwork">Open the app →</a>
+          <a class="go go-secondary" href="/for/upwork">See how it works →</a>
+        </div>
+      </div>
 
       <div class="board soon">
         <div class="top">
@@ -219,7 +228,7 @@
   <div class="wrap cols">
     <a href="/"><strong style="color:#fff; font-family:var(--font-display)">JobSearch</strong></a>
     <a href="/for/upwork">For Upwork</a>
-    <a href="/app/upwork">Open the app</a>
+    <a href="#boards">Open the app</a>
     <a href="/privacy">Privacy</a>
     <a href="mailto:jobsearch_support@doublemoon.biz">jobsearch_support@doublemoon.biz</a>
     <p class="legal">
