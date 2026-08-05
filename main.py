@@ -336,7 +336,7 @@ async def mypage():
     <h2>🔑 License Check</h2>
     <div class="form-row">
       <label>License Key</label>
-      <input type="text" id="lic-key" placeholder="UPWK-XXXX-XXXX-XXXX">
+      <input type="text" id="lic-key" placeholder="DMJS-XXXX-XXXX-XXXX">
     </div>
     <button class="btn btn-primary" onclick="checkLicense()">Check</button>
     <div id="lic-result" class="result-box"></div>

@@ -154,10 +154,16 @@ are appended below by the server. Follow that output format exactly."""
 # ──────────────────────────────────────────
 # ライセンス管理
 # ──────────────────────────────────────────
+# ライセンスキーの接頭辞。DMJS = Double Moon Job Search。
+# 旧キー(UPWK-)は検証側が接頭辞に依存していないため、そのまま有効に使い続けられる。
+# ここを変えても既存ライセンスには一切影響しない（新規発行分にのみ適用）。
+LICENSE_KEY_PREFIX = 'DMJS'
+
+
 def generate_license_key() -> str:
     chars = string.ascii_uppercase + string.digits
     parts = [''.join(secrets.choice(chars) for _ in range(4)) for _ in range(3)]
-    return 'UPWK-' + '-'.join(parts)
+    return LICENSE_KEY_PREFIX + '-' + '-'.join(parts)
 
 
 def create_license(email: str, plan: str = '1month', note: str = '') -> dict:
