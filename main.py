@@ -207,6 +207,18 @@ async def campaign_page():
     return HTMLResponse(content="<h1>Not found</h1>", status_code=404)
 
 
+@app.get("/thanks", response_class=HTMLResponse)
+async def thanks_page():
+    # 決済完了ページ。Polar の Success URL の遷移先。
+    # ライセンスキーはメールで送付するため、この画面ではキーを表示しない
+    # （Webhookの到着を待つポーリングは行わない方針）。
+    for path in ("frontend/thanks.html", "thanks.html"):
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Not found</h1>", status_code=404)
+
+
 @app.get("/health")
 async def health():
     return {"service": "JobSearch API", "version": "3.8.0", "status": "running"}
