@@ -27,7 +27,8 @@ Apply / Maybe / Skip に分類する Web サービス。
 |---|---|---|
 | `/` | トップ（ハブ・対応サイト一覧） | `frontend/hub.html` |
 | `/for/{site}` | サイト別 LP | `frontend/landing_{site}.html` |
-| `/app` | アプリ本体 | `frontend/index.html` |
+| `/app` | ハブへ 301 リダイレクト（旧URL互換） | － |
+| `/app/{site}` | サイト別アプリ本体（HTMLは1枚を共用し、`sites.py` の文言を差し込む） | `frontend/index.html` |
 | `/privacy` | プライバシーポリシー | `frontend/privacy.html` |
 | `/campaign` | SNS 拡散キャンペーン | `frontend/campaign.html` |
 | `/mypage` | マイページ | `main.py` 内で生成 |

@@ -1,5 +1,5 @@
 """
-main.py - Upwork JobSearch 本番サーバー v2
+main.py - JobSearch 本番サーバー v3.8（マルチ求人サイト対応）
 ライセンス認証＋プロンプト/セレクター配信型
 """
 import os
@@ -19,7 +19,7 @@ from database import (
     get_all_licenses, export_licenses_csv,
     get_license_stats, search_licenses, delete_license, delete_expired_licenses,
     get_license_with_config,
-    get_all_prompts, create_prompt, activate_prompt,
+    get_all_prompts, create_prompt, update_prompt, activate_prompt,
     get_latest_version,
     upload_file, get_active_file, get_all_files, activate_file, delete_file,
 )
@@ -27,13 +27,16 @@ from database import (
 # ── リデザイン追加分 ──
 from db_redesign import migrate, get_promo, save_promo, apply_plan_change  # DBマイグレーション＋広告欄＋プラン変更
 from plans import PLANS, plan_label, is_valid_plan       # プラン定義（単一情報源）
+from sites import (                                      # 対応求人サイト定義（単一情報源）
+    SITES, DEFAULT_SITE, get_site, is_valid_site, site_label, enabled_sites,
+)
 from evaluate import router as evaluate_router  # 採点API: POST /evaluate
 from payments import router as payments_router  # 決済Webhook: POST /webhook/{provider}
 
 # ══════════════════════════════════════════
 # 初期化
 # ══════════════════════════════════════════
-app = FastAPI(title="Upwork JobSearch API", version="3.0.0")
+app = FastAPI(title="JobSearch API", version="3.8.0")
 init_db()
 migrate()   # リデザイン: subscription_id/provider 列・usage_tracking 表を用意（既適用でも安全）
 
@@ -145,13 +148,42 @@ async def landing_page(site: str):
     )
 
 
-@app.get("/app", response_class=HTMLResponse)
-async def app_page():
-    # アプリ本体(index.html)。1ライセンスで全対応サイトを利用する単一オリジン。
-    return _serve_html(
-        "frontend/index.html", "index.html",
-        fallback="<h1>JobSearch</h1><p>frontend (index.html) not found.</p>",
-        status=200,
+@app.get("/app")
+async def app_root():
+    """サイト未指定のアプリURL。ハブへ戻し、そこで対応サイトを選んでもらう。
+    旧 /app のブックマークを切らさないための恒久リダイレクト。"""
+    return RedirectResponse("/", status_code=301)
+
+
+@app.get("/app/{site}", response_class=HTMLResponse)
+async def app_page(site: str):
+    """求人サイト別のアプリ本体。HTMLは1枚を共用し、
+    サイト固有の文言だけ sites.py の定義を差し込む。
+    1ライセンスで全対応サイトを利用できる点は従来どおり。"""
+    site = site.lower()
+    if not re.fullmatch(r"[a-z0-9-]{1,32}", site) or not is_valid_site(site):
+        return HTMLResponse(content="<h1>Not found</h1>", status_code=404)
+
+    conf = get_site(site)
+    for path in ("frontend/index.html", "index.html"):
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                html = f.read()
+            # サイト固有文言の差し込み。値はHTML属性にも入るためエスケープする。
+            for key, value in (
+                ("SITE_ID",            site),
+                ("SITE_LABEL",         conf["label"]),
+                ("PASTE_HEADING",      conf["paste_heading"]),
+                ("PASTE_PLACEHOLDER",  conf["paste_placeholder"]),
+                ("PASTE_TIP",          conf.get("paste_tip", "")),
+                ("CSV_FILENAME",       conf["csv_filename"]),
+            ):
+                html = html.replace("{{" + key + "}}", esc(value))
+            return HTMLResponse(content=html)
+
+    return HTMLResponse(
+        content="<h1>JobSearch</h1><p>frontend (index.html) not found.</p>",
+        status_code=200,
     )
 
 
@@ -177,7 +209,7 @@ async def campaign_page():
 
 @app.get("/health")
 async def health():
-    return {"service": "Upwork JobSearch API", "version": "3.0.0", "status": "running"}
+    return {"service": "JobSearch API", "version": "3.8.0", "status": "running"}
 
 
 # ── 広告欄 ──
@@ -253,7 +285,7 @@ async def mypage():
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Upwork JobSearch - My Page</title>
+  <title>JobSearch - My Page</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Arial, sans-serif; background: #F5F7FA; color: #1A1A1A; }
@@ -294,7 +326,7 @@ async def mypage():
 </head>
 <body>
 <div class="header">
-  <h1>⚡ Upwork JobSearch</h1>
+  <h1>⚡ JobSearch</h1>
   <p>My Page — License Check &amp; File Downloads</p>
 </div>
 
@@ -328,7 +360,7 @@ async def mypage():
     <ol style="font-size:13px;line-height:2;padding-left:20px;color:#333">
       <li>Open the web app and sign in with your license key</li>
       <li>Fill in your profile (skills, desired rate, keywords) and save it</li>
-      <li>On Upwork, open the job search page and sort by "Most Recent"</li>
+      <li>On the job board, open its job search page and sort by newest</li>
       <li>Select the page (Ctrl/⌘+A), copy it (Ctrl/⌘+C), and paste it into the app</li>
       <li>Press "Score these jobs" to get the triage board</li>
       <li>Optionally download the CSV and import it into the Excel viewer</li>
@@ -340,7 +372,7 @@ async def mypage():
 
 </div>
 
-<div class="footer">© 2026 Upwork JobSearch</div>
+<div class="footer">© 2026 JobSearch</div>
 
 <script>
 async function checkLicense() {
@@ -427,13 +459,27 @@ async def admin_page(username: str = Depends(verify_admin)):
     # プロンプト一覧
     prompt_rows = ""
     for p in prompts:
-        active_badge = '<span style="background:#E2EFDA;color:#375623;padding:2px 6px;border-radius:3px;font-size:11px">有効</span>' \
-                       if p['is_active'] else \
-                       '<button onclick="activatePrompt(' + str(p['id']) + ')" style="font-size:11px;padding:2px 6px;cursor:pointer">有効化</button>'
+        p_site = p.get('site')
+        if p['is_active']:
+            active_badge = ('<span style="background:#E2EFDA;color:#375623;padding:2px 6px;'
+                            'border-radius:3px;font-size:11px">有効</span>')
+        elif not p_site:
+            # 未割当は有効化できない（どのサイトの採点にも使われないため）
+            active_badge = ('<span style="color:#999;font-size:11px">'
+                            '－（サイト未割当）</span>')
+        else:
+            active_badge = ('<button onclick="activatePrompt(' + str(p['id']) + ')" '
+                            'style="font-size:11px;padding:2px 6px;cursor:pointer">有効化</button>')
+
+        site_cell = (f'<span style="font-size:11px">{esc(site_label(p_site))}</span>'
+                     if p_site else
+                     '<span style="color:#999;font-size:11px">未割当</span>')
+
         prompt_rows += f"""
         <tr>
           <td>{p['id']}</td>
           <td>{esc(p['version'])}</td>
+          <td>{site_cell}</td>
           <td>{esc(p['name'])}</td>
           <td>{active_badge}</td>
           <td>{p['created_at'][:10]}</td>
@@ -465,7 +511,7 @@ async def admin_page(username: str = Depends(verify_admin)):
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>管理者画面 - Upwork JobSearch</title>
+  <title>管理者画面 - JobSearch</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: Arial, sans-serif; background: #F5F7FA; color: #1A1A1A; font-size: 13px; }}
@@ -504,7 +550,7 @@ async def admin_page(username: str = Depends(verify_admin)):
 </head>
 <body>
 <div class="header">
-  <h1>⚡ Upwork JobSearch — 管理者画面</h1>
+  <h1>⚡ JobSearch — 管理者画面</h1>
   <span style="font-size:11px;opacity:0.7">{datetime.now().strftime('%Y/%m/%d %H:%M')}</span>
 </div>
 
@@ -567,7 +613,7 @@ async def admin_page(username: str = Depends(verify_admin)):
     </h2>
     <table>
       <thead>
-        <tr><th>ID</th><th>バージョン</th><th>名前</th><th>状態</th><th>作成日</th><th>操作</th></tr>
+        <tr><th>ID</th><th>バージョン</th><th>サイト</th><th>名前</th><th>状態</th><th>作成日</th><th>操作</th></tr>
       </thead>
       <tbody>{prompt_rows}</tbody>
     </table>
@@ -704,10 +750,12 @@ async function changePlan(key, id) {{
 }}
 
 async function activatePrompt(id) {{
-  if (!confirm('このプロンプトを有効化しますか？（他は無効化されます）')) return;
+  if (!confirm('このプロンプトを有効化しますか？（同じサイトの他のプロンプトは無効化されます）')) return;
   const res = await fetch('/admin/prompt/' + id + '/activate', {{method: 'POST'}});
-  if (res.ok) location.reload();
-  else alert('エラーが発生しました');
+  let data = {{}};
+  try {{ data = await res.json(); }} catch (e) {{}}
+  if (res.ok && data.success) {{ location.reload(); }}
+  else {{ alert(data.message || 'エラーが発生しました'); }}
 }}
 
 
@@ -868,7 +916,7 @@ async def admin_licenses_page(
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ライセンス一覧 - Upwork JobSearch</title>
+  <title>ライセンス一覧 - JobSearch</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: Arial, sans-serif; background: #F5F7FA; color: #1A1A1A; font-size: 13px; }}
@@ -1157,6 +1205,17 @@ def _render_prompt_edit_page(target: dict | None):
     name     = "" if is_new else esc(target['name'])
     template = "" if is_new else esc(target['template'])
     note     = "" if is_new else esc(target.get('note') or '')
+    cur_site = "" if is_new else (target.get('site') or "")
+    prompt_id = "null" if is_new else str(target['id'])
+
+    # サイト選択。未割当は「どのサイトの採点にも使われない」保管状態。
+    site_options = '<option value="">（未割当）</option>'
+    for s in enabled_sites():
+        sel = " selected" if s == cur_site else ""
+        site_options += f'<option value="{esc(s)}"{sel}>{esc(site_label(s))}</option>'
+    # 既に存在するが sites.py から外された値も選択肢として残す（データ保護）
+    if cur_site and cur_site not in enabled_sites():
+        site_options += f'<option value="{esc(cur_site)}" selected>{esc(cur_site)}（無効）</option>'
 
     return HTMLResponse(content=f"""<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8"><title>{title}</title>
@@ -1185,10 +1244,18 @@ textarea {{ min-height: 400px; resize: vertical; }}
 利用可能なプレースホルダー: {{skills}}, {{category}}, {{min_rate}}, {{exclude_line}},
 {{prefer_line}}, {{ai_request_line}}, {{jobs_text}} ※ {{ と }} はテンプレート内では {{{{ と }}}} と書く必要があります
 </div>
+<label>対象サイト</label>
+<select id="p-site" style="width:100%;padding:8px 12px;border:1px solid #BFCFDF;border-radius:5px;font-size:13px">
+{site_options}
+</select>
+<div style="font-size:11px;color:#777;margin-top:4px">
+※「未割当」のプロンプトは採点に使われません（旧バージョンの保管用）。<br>
+※ 有効化は同じサイト内で排他です。他サイトの有効プロンプトには影響しません。
+</div>
 <label>バージョン</label>
 <input type="text" id="p-version" value="{version}" placeholder="v1.0">
 <label>名前</label>
-<input type="text" id="p-name" value="{name}" placeholder="Upwork案件評価プロンプト v1.0">
+<input type="text" id="p-name" value="{name}" placeholder="案件評価プロンプト v1.0">
 <label>備考</label>
 <input type="text" id="p-note" value="{note}" placeholder="任意">
 <label>テンプレート本文</label>
@@ -1198,10 +1265,12 @@ textarea {{ min-height: 400px; resize: vertical; }}
 <div id="msg" class="msg"></div>
 </div>
 <script>
+const PROMPT_ID = {prompt_id};
 async function savePrompt() {{
   const version = document.getElementById('p-version').value.trim();
   const name = document.getElementById('p-name').value.trim();
   const note = document.getElementById('p-note').value.trim();
+  const site = document.getElementById('p-site').value;
   const template = document.getElementById('p-template').value;
   const msg = document.getElementById('msg');
   if (!version || !name || !template) {{
@@ -1209,16 +1278,23 @@ async function savePrompt() {{
     msg.textContent = 'バージョン・名前・本文は必須です';
     return;
   }}
-  const res = await fetch('/admin/prompt/create', {{
+  const url = PROMPT_ID === null
+    ? '/admin/prompt/create'
+    : '/admin/prompt/' + PROMPT_ID + '/update';
+  const res = await fetch(url, {{
     method: 'POST',
     headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{version, name, template, note}}),
+    body: JSON.stringify({{version, name, template, note, site}}),
   }});
   const data = await res.json();
   if (res.ok) {{
     msg.className = 'msg ok';
-    msg.innerHTML = '✅ 保存しました (ID: ' + data.id + ')<br>'
-      + '<a href="/admin">管理画面に戻る</a>から有効化してください';
+    if (PROMPT_ID === null) {{
+      msg.innerHTML = '✅ 保存しました (ID: ' + data.id + ')<br>'
+        + '<a href="/admin">管理画面に戻る</a>から有効化してください';
+    }} else {{
+      msg.innerHTML = '✅ 更新しました<br><a href="/admin">管理画面に戻る</a>';
+    }}
   }} else {{
     msg.className = 'msg error';
     msg.textContent = '❌ ' + (data.message || 'エラー');
@@ -1226,6 +1302,15 @@ async function savePrompt() {{
 }}
 </script>
 </body></html>""")
+
+
+def _validate_prompt_site(site: str):
+    """空文字は「未割当」として許容。値がある場合のみ実在チェック。"""
+    site = (site or "").strip().lower()
+    if site and site not in SITES:
+        return None, JSONResponse(status_code=400,
+                                  content={"message": f"未知のサイトです: {site}"})
+    return (site or None), None
 
 
 @app.post("/admin/prompt/create")
@@ -1237,7 +1322,26 @@ async def admin_create_prompt(request: Request, username: str = Depends(verify_a
     note     = body.get("note", "")
     if not version or not name or not template:
         return JSONResponse(status_code=400, content={"message": "必須項目が不足しています"})
-    return create_prompt(version, name, template, note)
+    site, err = _validate_prompt_site(body.get("site", ""))
+    if err:
+        return err
+    return create_prompt(version, name, template, note, site)
+
+
+@app.post("/admin/prompt/{prompt_id}/update")
+async def admin_update_prompt(prompt_id: int, request: Request,
+                              username: str = Depends(verify_admin)):
+    body = await request.json()
+    version  = body.get("version", "").strip()
+    name     = body.get("name", "").strip()
+    template = body.get("template", "")
+    note     = body.get("note", "")
+    if not version or not name or not template:
+        return JSONResponse(status_code=400, content={"message": "必須項目が不足しています"})
+    site, err = _validate_prompt_site(body.get("site", ""))
+    if err:
+        return err
+    return update_prompt(prompt_id, version, name, template, note, site)
 
 
 @app.post("/admin/prompt/{prompt_id}/activate")

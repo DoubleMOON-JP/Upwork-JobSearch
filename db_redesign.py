@@ -43,6 +43,20 @@ def migrate():
                     enabled INTEGER NOT NULL DEFAULT 0
                 );
                 INSERT INTO promo (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+                -- マルチ求人サイト対応：プロンプトをサイト単位で持つ。
+                -- NULL = 未割当（どのサイトでも使われない。旧プロンプトの保管用）
+                ALTER TABLE prompts ADD COLUMN IF NOT EXISTS site TEXT;
+                CREATE INDEX IF NOT EXISTS idx_prompts_site_active
+                    ON prompts(site, is_active);
+            """)
+
+            # 既存データの移行（初回のみ実質的に効く）。
+            # 現在有効なプロンプト（v3.1想定）だけを upwork に紐付け、
+            # 旧バージョンは未割当(NULL)のまま保管する。
+            cur.execute("""
+                UPDATE prompts SET site = 'upwork'
+                 WHERE is_active = 1 AND site IS NULL
             """)
 
 

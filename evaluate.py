@@ -17,7 +17,8 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 from database import validate_license, get_active_prompt, get_ai_settings
-from rate_limit import check_and_consume
+from rate_limit import check_and_consume, release
+from sites import get_site, is_valid_site, DEFAULT_SITE
 
 router = APIRouter()
 
@@ -27,12 +28,14 @@ DEFAULT_MODEL = "gemini-2.5-flash"
 
 
 # ── 貼付テキスト解析＋採点用のプロンプトを組み立てる ──────────
-def build_prompt(base_template: str, profile: dict, ai_request: str, pasted_text: str) -> str:
+def build_prompt(base_template: str, profile: dict, ai_request: str, pasted_text: str,
+                 site_conf: dict) -> str:
     """
     base_template : DBの有効プロンプト（採点基準の本体）
     profile       : スキル・時給・避けたいKW・優先KW 等
     ai_request    : ユーザーからAIへの自由要望
-    pasted_text   : Upworkからコピーした生テキスト（複数求人・ヘッダー等ゴミ混じり可）
+    pasted_text   : 求人サイトからコピーした生テキスト（複数求人・ヘッダー等ゴミ混じり可）
+    site_conf     : sites.py のサイト定義（表示名・ノイズ除去ヒント）
     """
     profile_lines = []
     if profile.get("skills"):        profile_lines.append(f"- Skills: {profile['skills']}")
@@ -56,14 +59,18 @@ def build_prompt(base_template: str, profile: dict, ai_request: str, pasted_text
             "(title / budget / posted / skills) must stay in their original language.\n"
         )
 
+    # サイト固有：貼付元の名称と、無視させたい定型ノイズ
+    source_label = site_conf.get("prompt_source_label") or site_conf.get("label") or "the job board"
+    noise_hint = site_conf.get("prompt_noise_hint") or "headers, footers, navigation and profile text"
+
     return f"""{base_template}
 
 ## Freelancer profile
 {profile_block}
 
-## Raw pasted text from Upwork (may contain multiple jobs plus navigation/footer noise)
+## Raw pasted text from {source_label} (may contain multiple jobs plus navigation/footer noise)
 Split this into individual job postings. IGNORE anything that is not a job
-(headers, footers, "Skip skills", "more about", profile/nav text, "© Upwork" etc.).
+({noise_hint} etc.).
 For EACH job, extract its fields and score it against the profile.
 
 <<<PASTED_TEXT_START>>>
@@ -129,11 +136,15 @@ async def evaluate(request: Request):
     profile     = body.get("profile") or {}
     ai_request  = body.get("ai_request") or ""
     threshold   = int(body.get("score_threshold") or 0)
+    # どの求人サイトから貼られたか。未指定は既定サイト（後方互換）。
+    site        = (body.get("site") or DEFAULT_SITE).strip().lower()
 
     if not license_key:
         raise HTTPException(400, "license_key is required")
     if not pasted_text:
         raise HTTPException(400, "pasted_text is empty")
+    if not is_valid_site(site):
+        raise HTTPException(400, f"unsupported site: {site}")
 
     # ① ライセンス認証
     lic = validate_license(license_key)
@@ -143,12 +154,22 @@ async def evaluate(request: Request):
     # ② レート制限＋月間上限（コスト防御）
     quota = check_and_consume(license_key, lic["plan"])
 
-    # ③ プロンプト・モデルを取得
-    prompt_row = get_active_prompt() or {}
-    base_template = prompt_row.get("template", "You are an assistant that scores Upwork jobs.")
+    # ③ プロンプト・モデルを取得（プロンプトはサイト別）
+    site_conf = get_site(site)
+    prompt_row = get_active_prompt(site) or {}
+    base_template = prompt_row.get("template")
+    if not base_template:
+        # そのサイト用の有効プロンプトが未設定。汎用文で走らせると採点品質が
+        # 担保できないため、明示的に失敗させて管理者が気づけるようにする。
+        release(license_key, quota)
+        raise HTTPException(
+            503,
+            f"no active prompt configured for site '{site}'. "
+            f"管理画面で {site} 用のプロンプトを有効化してください。"
+        )
     model = (get_ai_settings() or {}).get("default_model", DEFAULT_MODEL)
 
-    prompt = build_prompt(base_template, profile, ai_request, pasted_text)
+    prompt = build_prompt(base_template, profile, ai_request, pasted_text, site_conf)
 
     # ④ Gemini 呼び出し（Kojiのキーで）
     url = GEMINI_ENDPOINT.format(model=model)
@@ -157,9 +178,11 @@ async def evaluate(request: Request):
         async with httpx.AsyncClient(timeout=90) as client:
             resp = await client.post(url, params={"key": GEMINI_API_KEY}, json=payload)
     except httpx.HTTPError as e:
+        release(license_key, quota)
         raise HTTPException(502, f"gemini request failed: {e}")
 
     if resp.status_code != 200:
+        release(license_key, quota)
         raise HTTPException(502, f"gemini error {resp.status_code}: {resp.text[:300]}")
 
     gemini_json = resp.json()
@@ -168,18 +191,20 @@ async def evaluate(request: Request):
     try:
         jobs = _parse_json_array(text)
     except (ValueError, json.JSONDecodeError) as e:
+        release(license_key, quota)
         raise HTTPException(502, f"could not parse model output: {e}")
 
     # ⑤ 閾値で「表示対象」を判定しつつ、全件返す（フィルタはフロント側でも可）
     matched = [j for j in jobs if int(j.get("score", 0)) >= threshold]
 
     # コスト算出用：Renderのログに実測トークン数を記録（Gemini APIレスポンスの正確な値）
-    print(f"[evaluate] model={model} jobs={len(jobs)} "
+    print(f"[evaluate] site={site} model={model} jobs={len(jobs)} "
           f"prompt_tokens={usage['prompt_tokens']} output_tokens={usage['output_tokens']} "
           f"total_tokens={usage['total_tokens']}")
 
     return {
         "status": "ok",
+        "site": site,
         "count": len(jobs),
         "matched": len(matched),
         "threshold": threshold,

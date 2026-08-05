@@ -430,11 +430,16 @@ def export_licenses_csv() -> str:
 # ──────────────────────────────────────────
 # プロンプト管理
 # ──────────────────────────────────────────
-def get_active_prompt() -> dict:
+def get_active_prompt(site: str) -> dict:
+    """指定サイトで有効なプロンプトを返す。
+    サイトは必須。該当が無ければ空dict（呼び出し側でフォールバック文言を使う）。"""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                "SELECT * FROM prompts WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1"
+                """SELECT * FROM prompts
+                    WHERE is_active = 1 AND site = %s
+                    ORDER BY created_at DESC LIMIT 1""",
+                (site,)
             )
             row = cur.fetchone()
     return dict(row) if row else {}
@@ -454,24 +459,55 @@ def get_all_prompts() -> list:
     return result
 
 
-def create_prompt(version: str, name: str, template: str, note: str = '') -> dict:
+def create_prompt(version: str, name: str, template: str, note: str = '',
+                  site: str | None = None) -> dict:
+    """site=None は「未割当」。どのサイトの採点にも使われない保管状態。"""
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO prompts (version, name, template, is_active, note)
-                   VALUES (%s, %s, %s, 0, %s) RETURNING id""",
-                (version, name, template, note)
+                """INSERT INTO prompts (version, name, template, is_active, note, site)
+                   VALUES (%s, %s, %s, 0, %s, %s) RETURNING id""",
+                (version, name, template, note, site or None)
             )
             new_id = cur.fetchone()[0]
-    return {'id': new_id, 'version': version, 'name': name}
+    return {'id': new_id, 'version': version, 'name': name, 'site': site}
+
+
+def update_prompt(prompt_id: int, version: str, name: str, template: str,
+                  note: str = '', site: str | None = None) -> dict:
+    """既存プロンプトの上書き保存。サイトの付け替えもここで行う。"""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE prompts
+                      SET version = %s, name = %s, template = %s, note = %s, site = %s
+                    WHERE id = %s""",
+                (version, name, template, note, site or None, prompt_id)
+            )
+            # 未割当に戻した場合、有効フラグが残っていると採点対象が消えるため落とす
+            cur.execute(
+                "UPDATE prompts SET is_active = 0 WHERE id = %s AND site IS NULL",
+                (prompt_id,)
+            )
+    return {'success': True, 'id': prompt_id, 'site': site}
 
 
 def activate_prompt(prompt_id: int) -> dict:
+    """同一サイト内でのみ排他。他サイトの有効プロンプトには影響させない。
+    未割当(site IS NULL)のプロンプトは有効化できない。"""
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("UPDATE prompts SET is_active = 0")
+            cur.execute("SELECT site FROM prompts WHERE id = %s", (prompt_id,))
+            row = cur.fetchone()
+            if not row:
+                return {'success': False, 'message': 'プロンプトが見つかりません'}
+            site = row[0]
+            if not site:
+                return {'success': False,
+                        'message': 'サイトが未割当のため有効化できません。編集画面でサイトを選んでください'}
+            cur.execute("UPDATE prompts SET is_active = 0 WHERE site = %s", (site,))
             cur.execute("UPDATE prompts SET is_active = 1 WHERE id = %s", (prompt_id,))
-    return {'success': True, 'activated_id': prompt_id}
+    return {'success': True, 'activated_id': prompt_id, 'site': site}
 
 
 # ──────────────────────────────────────────
