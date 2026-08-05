@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Thank you — JobSearch</title>
+<meta name="description" content="Your subscription is active. Your licence key is on its way to your inbox." />
+<meta name="robots" content="noindex" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#16233F; --ink-soft:#2C3A57; --paper:#EEF1F5; --surface:#FFFFFF; --line:#E1E6ED;
+    --brand:#C55A11; --brand-dark:#A2470B; --muted:#6B7280;
+    --apply:#1E7A46; --apply-bg:#E7F3EC; --apply-line:#B7DCC4;
+    --maybe:#8A6100; --maybe-bg:#FBF3DF; --maybe-line:#EBD9A6;
+    --radius:14px; --radius-sm:9px;
+    --shadow:0 1px 2px rgba(22,35,63,.06), 0 8px 24px rgba(22,35,63,.06);
+    --font-display:"Space Grotesk", system-ui, sans-serif;
+    --font-body:"Inter", system-ui, sans-serif;
+    --font-mono:"IBM Plex Mono", ui-monospace, monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:var(--font-body); color:var(--ink); background:var(--paper);
+    -webkit-font-smoothing:antialiased; line-height:1.6;
+  }
+  h1,h2,h3{font-family:var(--font-display); font-weight:600; letter-spacing:-.02em; margin:0}
+  a{color:var(--brand-dark)}
+  .wrap{max-width:1060px; margin:0 auto; padding:0 clamp(16px,4vw,40px)}
+
+  header{
+    background:var(--ink); color:#fff; padding:14px clamp(16px,4vw,40px);
+    display:flex; align-items:center; gap:9px;
+  }
+  header .spark{color:var(--brand); font-size:18px; line-height:1}
+  header h1{font-size:16px; color:#fff}
+  header .tag{font-size:12px; color:#9FB0CC; font-family:var(--font-body)}
+  header nav{margin-left:auto; display:flex; align-items:center; gap:20px}
+  header nav a{color:#9FB0CC; font-size:12.5px; text-decoration:none}
+  header nav a:hover{color:#fff; text-decoration:underline}
+  @media(max-width:620px){ header .tag{display:none} }
+
+  main{padding:clamp(40px,7vw,72px) 0 clamp(50px,8vw,80px)}
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:clamp(26px,4vw,44px); max-width:680px; margin:0 auto;
+  }
+  .check{
+    width:46px; height:46px; border-radius:50%; background:var(--apply-bg);
+    border:1px solid var(--apply-line); color:var(--apply);
+    display:flex; align-items:center; justify-content:center;
+    font-size:24px; font-weight:700; margin-bottom:18px;
+  }
+  .kicker{
+    font-family:var(--font-display); font-size:11px; font-weight:700; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--brand); margin:0 0 8px;
+  }
+  h2{font-size:clamp(24px,3.6vw,31px); line-height:1.2; margin:0 0 12px}
+  .lead{font-size:15px; color:var(--ink-soft); margin:0 0 26px}
+
+  .mail{
+    background:var(--apply-bg); border:1px solid var(--apply-line);
+    border-radius:var(--radius-sm); padding:18px 20px; margin:0 0 26px;
+  }
+  .mail h3{font-size:15px; color:var(--apply); margin:0 0 8px}
+  .mail p{margin:0 0 8px; font-size:13.5px; color:#245C3D}
+  .mail p:last-child{margin-bottom:0}
+  .mono{font-family:var(--font-mono); font-size:13px}
+
+  ol{margin:0 0 26px; padding-left:20px; display:grid; gap:10px}
+  ol li{font-size:14px; color:var(--ink-soft)}
+  ol li b{color:var(--ink)}
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    font-family:var(--font-display); font-weight:600; font-size:14.5px;
+    padding:13px 24px; border-radius:999px; text-decoration:none;
+  }
+  .btn-primary{background:var(--brand); color:#fff}
+  .btn-primary:hover{background:var(--brand-dark)}
+  .actions{display:flex; flex-wrap:wrap; gap:14px; align-items:center}
+  .actions .plain{font-size:13.5px}
+
+  .note{
+    border-top:1px solid var(--line); margin-top:28px; padding-top:20px;
+    font-size:13px; color:var(--muted);
+  }
+  .note b{color:var(--ink-soft)}
+
+  footer{
+    background:var(--ink); color:#9FB0CC; padding:26px clamp(16px,4vw,40px);
+    font-size:12.5px; text-align:center;
+  }
+  footer a{color:#9FB0CC; text-decoration:none; margin:0 10px}
+  footer a:hover{color:#fff; text-decoration:underline}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="spark">✦</span>
+  <h1>JobSearch</h1>
+  <span class="tag">AI job triage</span>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/privacy">Privacy</a>
+  </nav>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="card">
+      <div class="check">✓</div>
+      <p class="kicker">Payment complete</p>
+      <h2>Thank you — your subscription is active.</h2>
+      <p class="lead">
+        Your licence key has been sent to the email address you used at checkout.
+        You can close this page; nothing else is needed here.
+      </p>
+
+      <div class="mail">
+        <h3>Check your inbox</h3>
+        <p>The email arrives within a few minutes from <span class="mono">js_license@doublemoon.biz</span>.</p>
+        <p>If you don't see it, check your spam or promotions folder and add that address to your contacts.</p>
+      </div>
+
+      <ol>
+        <li><b>Open the app</b> and paste your licence key on the sign-in screen.</li>
+        <li><b>Fill in your profile</b> — skills, target rate, keywords. It stays in your browser.</li>
+        <li><b>Paste your search results</b> and get every job scored against that profile.</li>
+      </ol>
+
+      <div class="actions">
+        <a class="btn btn-primary" href="/app/upwork">Open the app</a>
+        <a class="plain" href="/for/upwork">Back to the Upwork page</a>
+      </div>
+
+      <p class="note">
+        <b>No email after 15 minutes?</b>
+        Write to <a href="mailto:jobsearch_support@doublemoon.biz">jobsearch_support@doublemoon.biz</a>
+        with the address you paid with, and we'll send your key manually.
+        Billing, invoices and cancellation are handled in your Polar customer portal —
+        the link is in your receipt.
+      </p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div>
+    <a href="/">Home</a>
+    <a href="/for/upwork">Upwork</a>
+    <a href="/privacy">Privacy</a>
+    <a href="mailto:jobsearch_support@doublemoon.biz">Support</a>
+  </div>
+  <div style="margin-top:10px">© DoubleMoonTrading Co. — 有限会社ダブルムーントレーディング</div>
+</footer>
+
+</body>
+</html>
