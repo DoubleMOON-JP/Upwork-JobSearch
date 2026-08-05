@@ -57,6 +57,21 @@ STRICT_PRODUCT_MAPPING = True
 AUTO_APPLY_PLAN_CHANGE = True
 
 
+def _mail_license_key(email: str, license_key: str, plan: str,
+                      expires_at: Optional[str] = None) -> None:
+    """ライセンスキーをメール送付する。失敗しても処理は続行する。
+    mailer は遅延importにしてある（未配置でもサーバーが起動できるようにするため）。"""
+    try:
+        import mailer
+        ok = mailer.send_license_key(email, license_key, plan, expires_at)
+        if not ok:
+            log.error("MANUAL ACTION REQUIRED: mail not sent. key=%s to=%s",
+                      license_key, email)
+    except Exception as e:
+        log.error("MANUAL ACTION REQUIRED: mailer error (%s). key=%s to=%s",
+                  e, license_key, email)
+
+
 class EventKind(str, Enum):
     ACTIVATE    = "activate"     # 新規購入 → 発行
     RENEW       = "renew"        # 更新の入金 → 延長
@@ -176,7 +191,10 @@ def handle_payment_event(ev: PaymentEvent) -> None:
         key = res["license_key"]
         link_subscription(key, ev.provider, ev.subscription_id)
         log.info("license issued %s for %s", key, ev.subscription_id)
-        # TODO: 顧客へ license_key をメール送付（mailer.py 実装後にここから呼ぶ）
+        # 顧客へライセンスキーをメール送付。
+        # 送信に失敗しても例外は出さない（mailer側で握りつぶす）。Webhookを落とすと
+        # Polarが再送し、二重処理の原因になるため。失敗時はログを見て手動送付する。
+        _mail_license_key(ev.email, key, ev.plan, res.get("expires_at"))
 
     elif ev.kind == EventKind.RENEW:
         if existing:
@@ -187,6 +205,7 @@ def handle_payment_event(ev: PaymentEvent) -> None:
             res = create_license(ev.email, ev.plan)
             link_subscription(res["license_key"], ev.provider, ev.subscription_id)
             log.info("license issued on renew event %s", res["license_key"])
+            _mail_license_key(ev.email, res["license_key"], ev.plan, res.get("expires_at"))
 
     elif ev.kind == EventKind.CANCEL:
         if existing:
