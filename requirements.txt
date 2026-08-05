@@ -10,4 +10,4 @@ python-multipart==0.0.12
 # （payments.py は polar_sdk を関数内で遅延importするため、未インストールでもサーバーは起動し
 #   /evaluate・フロントは動作する。実際に /webhook/polar を叩くときだけ必要）
 # 追加する際は Python を 3.12 に固定した状態で:
-# polar-sdk
+polar-sdk
