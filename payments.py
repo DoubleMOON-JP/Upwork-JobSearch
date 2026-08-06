@@ -296,6 +296,27 @@ class PolarAdapter(PaymentAdapter):
         event_type = str(event.get("type") or "")
         data = event.get("data")
 
+        # ══════════════════════════════════════════════════════
+        # 【一時的な調査用ログ】/thanks へのライセンス表示を検討するため、
+        # Polarのペイロードに checkout_id が含まれるかを確認する。
+        # 確認が済んだらこのブロックごと削除すること。
+        # 個人情報をログに残さないよう、値ではなくキー名のみを出力する。
+        # ══════════════════════════════════════════════════════
+        try:
+            if isinstance(data, dict):
+                log.info("PAYLOAD-KEYS [%s]: %s", event_type, sorted(data.keys()))
+                hits = {}
+                for k, v in data.items():
+                    if "checkout" in k.lower():
+                        hits[k] = v if not isinstance(v, (dict, list)) else type(v).__name__
+                co = data.get("checkout")
+                if isinstance(co, dict):
+                    hits["checkout.id"] = co.get("id")
+                log.info("PAYLOAD-CHECKOUT [%s]: %s", event_type, hits or "NOT FOUND")
+        except Exception as _e:
+            log.warning("payload inspection failed: %s", _e)
+        # ══════════ 一時的な調査用ログ ここまで ══════════
+
         if event_type in self.ACTIVATE_EVENTS:
             # サブスクリプション本体のイベント → id がそのまま契約ID
             subscription_id = str(_get(data, "id", default="") or "")
