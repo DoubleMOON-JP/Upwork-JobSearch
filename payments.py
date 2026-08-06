@@ -271,14 +271,29 @@ class PolarAdapter(PaymentAdapter):
 
     def verify_and_parse(self, body: bytes, headers) -> Optional[PaymentEvent]:
         # Polarは Standard Webhooks 形式。公式Python SDKで署名検証。
+        import json
         from polar_sdk.webhooks import validate_event, WebhookVerificationError
         secret = os.environ["POLAR_WEBHOOK_SECRET"]
         try:
             event = validate_event(body, dict(headers), secret)
         except WebhookVerificationError:
             raise HTTPException(401, "invalid signature")
+        except Exception as e:
+            # 署名検証は validate_event の内部で先に行われるため、ここに来た時点で
+            # 署名は正しい。SDKのバージョンが古く、新しいイベント型（order.paid など）を
+            # 解釈できない場合に発生する。生のJSONを使って処理を続行する。
+            log.warning("polar-sdk could not parse payload (%s); falling back to raw JSON", e)
+            try:
+                event = json.loads(body)
+            except Exception:
+                log.error("webhook body is not valid JSON; ignored")
+                return None
 
-        event_type = str(_get(event, "type", default="") or "")
+        # SDKは type を Enum で返す。Python 3.12 では str() すると
+        # "WebhookSubscriptionCreatedPayloadType.SUBSCRIPTION_CREATED" のような
+        # 文字列になり "subscription.created" と一致しない。必ず .value を取る。
+        raw_type = _get(event, "type", default="")
+        event_type = str(getattr(raw_type, "value", raw_type) or "")
         data = _get(event, "data")
 
         if event_type in self.ACTIVATE_EVENTS:
@@ -303,7 +318,8 @@ class PolarAdapter(PaymentAdapter):
             #   subscription_update            … プラン変更の差額請求。日割りの差額しか
             #                                    入金されないため、延長すると1ヶ月分の
             #                                    取りこぼしになる（方針：期限は変えない）
-            reason = str(_get(data, "billing_reason", default="") or "")
+            raw_reason = _get(data, "billing_reason", default="")
+            reason = str(getattr(raw_reason, "value", raw_reason) or "")
             if reason != "subscription_cycle":
                 log.info("order ignored (billing_reason=%s)", reason)
                 return None
@@ -331,8 +347,10 @@ class PolarAdapter(PaymentAdapter):
             kind = EventKind.CANCEL
 
         else:
+            log.info("polar event ignored (not handled): %s", event_type)
             return None
 
+        log.info("polar event accepted: %s (%s)", event_type, kind)
         return PaymentEvent(
             kind=kind,
             provider=self.provider,

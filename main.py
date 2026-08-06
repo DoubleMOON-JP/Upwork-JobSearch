@@ -5,8 +5,17 @@ main.py - JobSearch 本番サーバー v3.8（マルチ求人サイト対応）
 import os
 import re
 import json
+import logging
 import secrets as sec_module
 from datetime import datetime
+
+# アプリ側の log.info(...) を Render のログに出す。
+# 未設定だとルートロガーが WARNING のままで、決済Webhookの
+# "license issued ..." などが一切表示されず、障害調査ができない。
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 
 from fastapi import FastAPI, Request, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse, HTMLResponse, Response, RedirectResponse
