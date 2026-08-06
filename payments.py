@@ -275,26 +275,26 @@ class PolarAdapter(PaymentAdapter):
         from polar_sdk.webhooks import validate_event, WebhookVerificationError
         secret = os.environ["POLAR_WEBHOOK_SECRET"]
         try:
-            event = validate_event(body, dict(headers), secret)
+            validate_event(body, dict(headers), secret)
         except WebhookVerificationError:
             raise HTTPException(401, "invalid signature")
         except Exception as e:
             # 署名検証は validate_event の内部で先に行われるため、ここに来た時点で
             # 署名は正しい。SDKのバージョンが古く、新しいイベント型（order.paid など）を
-            # 解釈できない場合に発生する。生のJSONを使って処理を続行する。
-            log.warning("polar-sdk could not parse payload (%s); falling back to raw JSON", e)
-            try:
-                event = json.loads(body)
-            except Exception:
-                log.error("webhook body is not valid JSON; ignored")
-                return None
+            # モデル化できない場合に発生する。内容は下の生JSONから読むので処理は続行する。
+            log.warning("polar-sdk could not model payload (%s); using raw JSON", e)
 
-        # SDKは type を Enum で返す。Python 3.12 では str() すると
-        # "WebhookSubscriptionCreatedPayloadType.SUBSCRIPTION_CREATED" のような
-        # 文字列になり "subscription.created" と一致しない。必ず .value を取る。
-        raw_type = _get(event, "type", default="")
-        event_type = str(getattr(raw_type, "value", raw_type) or "")
-        data = _get(event, "data")
+        # 署名検証はSDKに任せ、中身は生JSONから読む。
+        # SDKのモデルはバージョンによってフィールド名や型（Enum）が変わり、
+        # 取得に失敗するとイベントが無言で無視されるため、ここでは依存しない。
+        try:
+            event = json.loads(body)
+        except Exception:
+            log.error("webhook body is not valid JSON; ignored")
+            return None
+
+        event_type = str(event.get("type") or "")
+        data = event.get("data")
 
         if event_type in self.ACTIVATE_EVENTS:
             # サブスクリプション本体のイベント → id がそのまま契約ID
