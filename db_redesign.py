@@ -180,6 +180,19 @@ def set_mail_status(license_key: str, status: str, error: str = None) -> None:
                 )
 
 
+def get_license_row(license_key: str):
+    """ライセンス1件を取得する（管理画面のキー再送で使用）。"""
+    if not license_key:
+        return None
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM licenses WHERE license_key = %s", (license_key,)
+            )
+            row = cur.fetchone()
+    return dict(row) if row else None
+
+
 def find_license_by_checkout(checkout_id: str):
     """チェックアウトIDからライセンスを引く。発行直後の一定時間だけ返す。
     見つからない場合と時間切れの場合は、区別せず None を返す

@@ -68,6 +68,19 @@ def _record_mail_status(license_key: str, status: str, error: str = None) -> Non
                   status, license_key, e)
 
 
+def _alert_failure(email: str, license_key: str, plan: str, reason: str) -> None:
+    """送付失敗を運営者へメールで知らせる。
+
+    SMTPが落ちている場合はこの通知自体も届かないため、これだけに頼らないこと。
+    管理画面の「未送信（赤）」表示が本命の検知手段で、これはその補助。
+    通知の送信で例外が出ても握りつぶす（Webhookを落とさないため）。"""
+    try:
+        import mailer
+        mailer.send_failure_alert(email, license_key, plan, reason)
+    except Exception as e:
+        log.error("could not send failure alert: %s", e)
+
+
 def _mail_license_key(email: str, license_key: str, plan: str,
                       expires_at: Optional[str] = None) -> None:
     """ライセンスキーをメール送付し、結果をDBに記録する。失敗しても処理は続行する。
@@ -84,10 +97,12 @@ def _mail_license_key(email: str, license_key: str, plan: str,
             log.error("MANUAL ACTION REQUIRED: mail not sent. key=%s to=%s",
                       license_key, email)
             _record_mail_status(license_key, "failed", "send returned false")
+            _alert_failure(email, license_key, plan, "send returned false")
     except Exception as e:
         log.error("MANUAL ACTION REQUIRED: mailer error (%s). key=%s to=%s",
                   e, license_key, email)
         _record_mail_status(license_key, "failed", str(e))
+        _alert_failure(email, license_key, plan, str(e))
 
 
 class EventKind(str, Enum):

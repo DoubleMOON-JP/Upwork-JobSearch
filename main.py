@@ -38,6 +38,7 @@ from database import (
 from db_redesign import (                                  # DBマイグレーション＋広告欄＋プラン変更
     migrate, get_promo, save_promo, apply_plan_change,
     find_license_by_checkout, set_mail_status,             # /thanks でのキー表示・メール送付状態
+    get_license_row,                                       # キー再送で使用
 )
 from plans import PLANS, plan_label, is_valid_plan       # プラン定義（単一情報源）
 from sites import (                                      # 対応求人サイト定義（単一情報源）
@@ -313,11 +314,19 @@ async def license_by_checkout(checkout_id: str):
         return {"found": False}
     if not lic:
         return {"found": False}
+    # プラン表記は顧客向けの英語を使う。plans.py の label は管理画面用の
+    # 日本語（例：「Standard（月100回）」）なので、ここで使うとメール本文と
+    # 表記が食い違う。mailer.py を単一の情報源にする。
+    try:
+        import mailer
+        plan_label = mailer.plan_text_en(lic["plan"])
+    except Exception:
+        plan_label = ""
     return {
         "found": True,
         "license_key": lic["license_key"],
         "plan": lic["plan"],
-        "plan_label": PLANS.get(lic["plan"], {}).get("label", lic["plan"]),
+        "plan_label": plan_label,
         "expires_at": str(lic["expires_at"]),
     }
 
@@ -831,6 +840,8 @@ async def admin_licenses_page(
               style="font-size:11px;padding:3px 7px;cursor:pointer">+1ヶ月</button>
             <button onclick="changePlan('{esc(lic['license_key'])}', {lic['id']})"
               style="font-size:11px;padding:3px 7px;cursor:pointer">プラン変更</button>
+            <button onclick="resendKey('{esc(lic['license_key'])}', '{esc(lic['email'])}')"
+              style="font-size:11px;padding:3px 7px;cursor:pointer">キー再送</button>
             <button onclick="delLicense('{esc(lic['license_key'])}', '{esc(lic['email'])}')"
               style="font-size:11px;padding:3px 7px;cursor:pointer;color:#843C0C">削除</button>
           </td>
@@ -963,6 +974,22 @@ async def admin_licenses_page(
 </div>
 
 <script>
+async function resendKey(key, email) {{
+  if (!confirm('このライセンスキーをメールで送信しますか？\\n\\n'
+               + key + '\\n宛先: ' + email)) return;
+  const res = await fetch('/admin/license/resend', {{
+    method: 'POST', headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{license_key: key}}),
+  }});
+  const data = await res.json();
+  if (res.ok && data.success) {{
+    alert('送信しました: ' + data.email);
+    location.reload();
+  }} else {{
+    alert('エラー: ' + (data.message || '不明なエラー'));
+  }}
+}}
+
 async function extend(key) {{
   if (!confirm(key + ' を1ヶ月延長しますか？')) return;
   const res = await fetch('/admin/license/extend', {{
@@ -1052,6 +1079,74 @@ async def admin_create_license(request: Request, username: str = Depends(verify_
     except Exception as e:
         log.error("could not mark manual mail status: %s", e)
     return res
+
+
+@app.post("/admin/license/resend")
+async def admin_resend_license(request: Request, username: str = Depends(verify_admin)):
+    """ライセンスキーを購入者へ再送する。
+
+    用途は2つ。
+      ・決済分でメール送信に失敗したもの（一覧で「未送信」＝赤）の復旧
+      ・管理画面から手動発行したもの（メールを送っていない）の送付
+
+    有効なライセンスに限る。期限切れ・無効化されたキーを送っても
+    サインインできず、受け取った側が混乱するため。
+    """
+    body = await request.json()
+    key = (body.get("license_key") or "").strip()
+    if not key:
+        return JSONResponse(status_code=400,
+                            content={"message": "license_keyが必要です"})
+
+    lic = get_license_row(key)
+    if not lic:
+        return JSONResponse(status_code=404,
+                            content={"message": "ライセンスキーが見つかりません"})
+
+    # 有効性の確認（状態と有効期限の両方を見る）
+    if lic.get("status") != "active":
+        return JSONResponse(status_code=400,
+                            content={"message": "無効化されたライセンスは再送できません"})
+    today = datetime.today().date().isoformat()
+    if str(lic.get("expires_at")) < today:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "期限切れのライセンスは再送できません。"
+                                "先に「+1ヶ月」で延長してください"})
+
+    try:
+        import mailer
+        if not mailer.is_configured():
+            return JSONResponse(
+                status_code=503,
+                content={"message": "SMTPが未設定です。Renderの環境変数を確認してください"})
+        ok = mailer.send_license_key(
+            lic["email"], key, lic["plan"], str(lic.get("expires_at") or "")
+        )
+    except Exception as e:
+        log.error("resend failed for %s: %s", key, e)
+        try:
+            set_mail_status(key, "failed", str(e))
+        except Exception:
+            pass
+        return JSONResponse(status_code=500,
+                            content={"message": f"送信エラー: {e}"})
+
+    if ok:
+        try:
+            set_mail_status(key, "sent")
+        except Exception as e:
+            log.error("could not record mail status after resend: %s", e)
+        log.info("license key resent: %s to %s", key, lic["email"])
+        return {"success": True, "email": lic["email"]}
+
+    try:
+        set_mail_status(key, "failed", "resend returned false")
+    except Exception:
+        pass
+    return JSONResponse(
+        status_code=500,
+        content={"message": "送信できませんでした。SMTPの設定を確認してください"})
 
 
 @app.post("/admin/license/extend")

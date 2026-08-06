@@ -60,6 +60,20 @@ def _plan_text(plan: str) -> str:
     return f"{name} — {cap} job evaluations per month"
 
 
+# ── 顧客向けプラン表記（メール・購入完了ページ共通の単一情報源）─────
+# plans.py の label は管理画面用の日本語（例：「Standard（月100回）」）。
+# 顧客向けの画面・メールは英語のため、必ずこちらを使うこと。
+# 混在させると、同じライセンスなのにメールと画面で表記が食い違う。
+def plan_text_en(plan: str) -> str:
+    """例: "Basic — 100 job evaluations per month" """
+    return _plan_text(plan)
+
+
+def plan_name_en(plan: str) -> str:
+    """商品名だけ。例: "Basic" """
+    return PLAN_TEXT_EN.get(plan, ("Standard", 100))[0]
+
+
 def _send(to_email: str, subject: str, body: str) -> bool:
     """1通送る。成功なら True。例外は出さず False を返す。"""
     if not is_configured():
@@ -160,6 +174,43 @@ def send_renewal_notice(to_email: str, license_key: str, plan: str,
         BASE_URL,
     ]
     return _send(to_email, subject, "\n".join(lines))
+
+
+# ── 送信失敗の通知（運営者宛て） ───────────────────────────
+def send_failure_alert(customer_email: str, license_key: str, plan: str,
+                       reason: str = "") -> bool:
+    """顧客へのキー送付に失敗したことを運営者へ知らせる。
+
+    【限界】SMTPそのものが落ちている場合、この通知も届かない。
+    そのため管理画面の「キー送付＝未送信（赤）」表示と併用する前提。
+    この関数の戻り値は記録しない（通知の成否まで追うと切りがないため）。
+    """
+    if not SUPPORT_EMAIL:
+        return False
+    subject = f"[JobSearch] ライセンスキーの送付に失敗しました（{customer_email}）"
+    lines = [
+        "決済は完了しましたが、購入者へのライセンスキー送付に失敗しました。",
+        "手動での対応が必要です。",
+        "",
+        f"  宛先        : {customer_email}",
+        f"  ライセンスキー: {license_key}",
+        f"  プラン      : {plan_text_en(plan)}",
+        f"  失敗の内容  : {reason or '(不明)'}",
+        "",
+        "対応方法",
+        f"  1. {BASE_URL}/admin/licenses を開く",
+        "  2. 該当のライセンス（キー送付が「未送信」と赤く表示されている行）を探す",
+        "  3. 「キー再送」ボタンを押す",
+        "",
+        "  ボタンで送れない場合は、SMTPの設定（さくらのパスワード変更など）を",
+        "  確認してください。復旧後に再送すれば、状態は「送信済」に戻ります。",
+        "",
+        "  なお購入者は、購入直後であれば購入完了ページでキーを確認できます",
+        "  （発行から30分以内）。",
+        "",
+        "JobSearch システム通知",
+    ]
+    return _send(SUPPORT_EMAIL, subject, "\n".join(lines))
 
 
 # ── 動作確認用（Renderのシェルから実行できる） ──────────────
