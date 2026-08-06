@@ -71,6 +71,40 @@
   .mail p:last-child{margin-bottom:0}
   .mono{font-family:var(--font-mono); font-size:13px}
 
+  /* ライセンスキーの表示欄。取得できた時だけ出す（既定は非表示）。 */
+  .keybox{
+    background:#FFFFFF; border:2px solid var(--brand);
+    border-radius:var(--radius-sm); padding:18px 20px; margin:0 0 22px;
+  }
+  .keybox.hidden{display:none}
+  .keybox h3{font-size:14px; color:var(--brand); margin:0 0 10px;
+             font-family:var(--font-display)}
+  .keyrow{display:flex; flex-wrap:wrap; gap:12px; align-items:center}
+  .keyval{
+    font-family:var(--font-mono); font-size:19px; font-weight:600;
+    letter-spacing:.04em; color:var(--ink); word-break:break-all;
+  }
+  .copybtn{
+    font-family:var(--font-body); font-size:12.5px; font-weight:600;
+    padding:7px 14px; border-radius:999px; cursor:pointer;
+    border:1px solid var(--line); background:#F6F8FA; color:var(--ink-soft);
+  }
+  .copybtn:hover{background:#ECF0F5}
+  .keymeta{font-size:12.5px; color:var(--muted); margin:10px 0 0}
+
+  /* 取得中の表示。数秒で消えるか、キー欄に置き換わる。 */
+  .keywait{
+    font-size:13px; color:var(--muted); margin:0 0 22px;
+    display:flex; align-items:center; gap:9px;
+  }
+  .keywait.hidden{display:none}
+  .dot{
+    width:8px; height:8px; border-radius:50%; background:var(--brand);
+    animation:pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+  @media (prefers-reduced-motion:reduce){ .dot{animation:none; opacity:.6} }
+
   ol{margin:0 0 26px; padding-left:20px; display:grid; gap:10px}
   ol li{font-size:14px; color:var(--ink-soft)}
   ol li b{color:var(--ink)}
@@ -122,6 +156,22 @@
         You can close this page; nothing else is needed here.
       </p>
 
+      <!-- 取得中の表示。checkout_id が無い場合は最初から出さない。 -->
+      <div class="keywait hidden" id="keywait">
+        <span class="dot"></span>
+        <span>Fetching your licence key&hellip;</span>
+      </div>
+
+      <!-- ライセンスキー。取得できた時だけ表示する。 -->
+      <div class="keybox hidden" id="keybox">
+        <h3>YOUR LICENCE KEY</h3>
+        <div class="keyrow">
+          <span class="keyval" id="keyval"></span>
+          <button class="copybtn" id="copybtn" type="button">Copy</button>
+        </div>
+        <p class="keymeta" id="keymeta"></p>
+      </div>
+
       <div class="mail">
         <h3>Check your inbox</h3>
         <p>The email arrives within a few minutes from <span class="mono">js_license@doublemoon.biz</span>.</p>
@@ -162,6 +212,106 @@
     © 2026 DoubleMoonTrading Co.（有限会社ダブルムーントレーディング） — Yashio, Saitama, Japan
   </div>
 </footer>
+
+<script>
+"use strict";
+/* ──────────────────────────────────────────────────────────
+   ライセンスキーの画面表示（メール送付との二重化）
+
+   Polar の Success URL には checkout_id が付く。これをサーバーに問い合わせ、
+   発行済みならキーを画面に出す。メール送付は従来どおり行われるため、
+   ここで取得できなくても実害はない（その場合はメール案内のまま）。
+
+   Webhook の到着は決済完了とは非同期。実測では画面表示より先に届くことが
+   多いが、遅れる場合に備えて数回だけ再試行する。無限には回さない。
+   ────────────────────────────────────────────────────────── */
+(function () {
+  var MAX_TRIES = 10;      // 最大試行回数
+  var INTERVAL  = 2000;    // 再試行の間隔（ミリ秒）
+  var tries = 0;
+
+  function param(name) {
+    try {
+      return new URLSearchParams(window.location.search).get(name) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  var checkoutId = param("checkout_id");
+  if (!checkoutId) { return; }   // 直接アクセスされた場合は何もしない
+
+  var elWait = document.getElementById("keywait");
+  var elBox  = document.getElementById("keybox");
+  var elVal  = document.getElementById("keyval");
+  var elMeta = document.getElementById("keymeta");
+  var elCopy = document.getElementById("copybtn");
+
+  if (elWait) { elWait.classList.remove("hidden"); }
+
+  function giveUp() {
+    // 取得できなくてもエラーは出さない。メールが届くため案内はそのままでよい。
+    if (elWait) { elWait.classList.add("hidden"); }
+  }
+
+  function show(data) {
+    if (elWait) { elWait.classList.add("hidden"); }
+    if (!elBox || !elVal) { return; }
+    elVal.textContent = data.license_key;
+    if (elMeta) {
+      var bits = [];
+      if (data.plan_label)  { bits.push(data.plan_label); }
+      if (data.expires_at)  { bits.push("Valid until " + data.expires_at); }
+      elMeta.textContent = bits.join("  \u00b7  ");
+    }
+    elBox.classList.remove("hidden");
+  }
+
+  function poll() {
+    tries += 1;
+    fetch("/license/by-checkout/" + encodeURIComponent(checkoutId), {
+      headers: { "Accept": "application/json" }
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && data.found && data.license_key) { show(data); return; }
+        if (tries >= MAX_TRIES) { giveUp(); return; }
+        window.setTimeout(poll, INTERVAL);
+      })
+      .catch(function () {
+        if (tries >= MAX_TRIES) { giveUp(); return; }
+        window.setTimeout(poll, INTERVAL);
+      });
+  }
+
+  poll();
+
+  if (elCopy) {
+    elCopy.addEventListener("click", function () {
+      var text = elVal ? elVal.textContent : "";
+      if (!text) { return; }
+      var done = function () {
+        elCopy.textContent = "Copied";
+        window.setTimeout(function () { elCopy.textContent = "Copy"; }, 1800);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () {});
+      } else {
+        // 古いブラウザ向けの代替手段
+        try {
+          var ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+          done();
+        } catch (e) { /* コピーできなくても手入力できるので何もしない */ }
+      }
+    });
+  }
+})();
+</script>
 
 </body>
 </html>
