@@ -16,6 +16,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
+log = logging.getLogger("main")
 
 from fastapi import FastAPI, Request, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse, HTMLResponse, Response, RedirectResponse
@@ -34,7 +35,10 @@ from database import (
 )
 
 # ── リデザイン追加分 ──
-from db_redesign import migrate, get_promo, save_promo, apply_plan_change  # DBマイグレーション＋広告欄＋プラン変更
+from db_redesign import (                                  # DBマイグレーション＋広告欄＋プラン変更
+    migrate, get_promo, save_promo, apply_plan_change,
+    find_license_by_checkout, set_mail_status,             # /thanks でのキー表示・メール送付状態
+)
 from plans import PLANS, plan_label, is_valid_plan       # プラン定義（単一情報源）
 from sites import (                                      # 対応求人サイト定義（単一情報源）
     SITES, DEFAULT_SITE, get_site, is_valid_site, site_label, enabled_sites,
@@ -282,6 +286,40 @@ async def license_validate(request: Request):
         return JSONResponse(status_code=403, content=result)
 
     return result
+
+
+# ══════════════════════════════════════════
+# 購入完了ページ用：チェックアウトIDからライセンスキーを引く
+# ══════════════════════════════════════════
+# /thanks が checkout_id を持って問い合わせてくる。メール送付は従来どおり行い、
+# こちらは「画面にも出す」ための二重化。メールが届かなくても購入者が
+# その場でキーを受け取れるようにするのが目的。
+#
+# 【安全側の設計】
+#  ・発行から一定時間（db_redesign.CHECKOUT_LOOKUP_WINDOW_MINUTES）だけ返す。
+#  ・該当なし・時間切れ・無効化済みは、すべて同じ応答（found=false）にする。
+#    区別するとIDの推測に手がかりを与えるため。
+#  ・常に200で返す。/thanks 側はキーが取れなければメール案内のまま表示する。
+@app.get("/license/by-checkout/{checkout_id}")
+async def license_by_checkout(checkout_id: str):
+    checkout_id = (checkout_id or "").strip()
+    # PolarのチェックアウトIDはUUID形式。極端な長さの入力はここで弾く。
+    if not checkout_id or len(checkout_id) > 100:
+        return {"found": False}
+    try:
+        lic = find_license_by_checkout(checkout_id)
+    except Exception as e:
+        log.error("checkout lookup failed: %s", e)
+        return {"found": False}
+    if not lic:
+        return {"found": False}
+    return {
+        "found": True,
+        "license_key": lic["license_key"],
+        "plan": lic["plan"],
+        "plan_label": PLANS.get(lic["plan"], {}).get("label", lic["plan"]),
+        "expires_at": str(lic["expires_at"]),
+    }
 
 
 # ══════════════════════════════════════════
@@ -764,6 +802,20 @@ async def admin_licenses_page(
             opts = f'<option value="{esc(current_plan)}" selected>{esc(current_plan)}（旧）</option>' + opts
 
         paid = "決済" if lic.get("subscription_id") else "手動"
+
+        # メール送付の状態。failed だけを目立たせる（要手動対応のため）。
+        ms = lic.get("mail_status")
+        if ms == "sent":
+            mail_badge = '<span style="color:#375623">送信済</span>'
+        elif ms == "failed":
+            mail_badge = ('<span style="background:#FCE4D6;color:#843C0C;'
+                          'font-weight:bold;padding:2px 6px;border-radius:3px">'
+                          '未送信</span>')
+        elif ms == "manual":
+            mail_badge = '<span style="color:#777">手動発行</span>'
+        else:
+            # この機能を入れる前に発行された分。送れているかは分からない。
+            mail_badge = '<span style="color:#BBB">—</span>'
         rows += f"""
         <tr>
           <td>{lic['id']}</td>
@@ -771,6 +823,7 @@ async def admin_licenses_page(
           <td>{esc(lic['email'])}</td>
           <td><select id="plan-{lic['id']}" style="font-size:11px;padding:2px 4px">{opts}</select></td>
           <td style="font-size:11px;color:#777">{paid}</td>
+          <td style="font-size:11px">{mail_badge}</td>
           <td>{badge}</td>
           <td>{lic['expires_at']}</td>
           <td style="white-space:nowrap">
@@ -784,7 +837,7 @@ async def admin_licenses_page(
         </tr>"""
 
     if not rows:
-        rows = '<tr><td colspan="8" style="text-align:center;color:#999;padding:24px">該当するライセンスはありません</td></tr>'
+        rows = '<tr><td colspan="9" style="text-align:center;color:#999;padding:24px">該当するライセンスはありません</td></tr>'
 
     def sel(v):
         return " selected" if status == v else ""
@@ -878,7 +931,7 @@ async def admin_licenses_page(
     <table>
       <thead>
         <tr><th>ID</th><th>ライセンスキー</th><th>メール</th><th>プラン</th><th>種別</th>
-            <th>状態</th><th>有効期限</th><th>操作</th></tr>
+            <th>キー送付</th><th>状態</th><th>有効期限</th><th>操作</th></tr>
       </thead>
       <tbody>{rows}</tbody>
     </table>
@@ -991,7 +1044,14 @@ async def admin_create_license(request: Request, username: str = Depends(verify_
             status_code=400,
             content={"message": f"未定義のプランです: {plan}（plans.py を確認してください）"},
         )
-    return create_license(email=email, plan=plan, note=note)
+    res = create_license(email=email, plan=plan, note=note)
+    # 手動発行はメールを送っていない。一覧で「決済分の送信失敗」と区別できるよう
+    # manual を立てておく（赤表示にはしない）。
+    try:
+        set_mail_status(res["license_key"], "manual")
+    except Exception as e:
+        log.error("could not mark manual mail status: %s", e)
+    return res
 
 
 @app.post("/admin/license/extend")

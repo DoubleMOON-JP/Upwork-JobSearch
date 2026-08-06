@@ -49,6 +49,22 @@ def migrate():
                 ALTER TABLE prompts ADD COLUMN IF NOT EXISTS site TEXT;
                 CREATE INDEX IF NOT EXISTS idx_prompts_site_active
                     ON prompts(site, is_active);
+
+                -- ── 購入完了ページ（/thanks）でのキー表示用 ──────────
+                -- PolarのチェックアウトID。/thanks のURLに付く値と一致するため、
+                -- これを鍵にして「今まさに購入した本人」にだけキーを返す。
+                ALTER TABLE licenses ADD COLUMN IF NOT EXISTS checkout_id TEXT;
+                CREATE INDEX IF NOT EXISTS idx_licenses_checkout
+                    ON licenses(checkout_id);
+
+                -- ── メール送付の状態（管理画面での見落とし防止）──────
+                --   sent    … 送信成功
+                --   failed  … 送信失敗（要手動対応。一覧で赤表示）
+                --   manual  … 管理画面からの手動発行（メールは送っていない）
+                --   NULL    … 不明（この機能を入れる前に発行された分）
+                ALTER TABLE licenses ADD COLUMN IF NOT EXISTS mail_status  TEXT;
+                ALTER TABLE licenses ADD COLUMN IF NOT EXISTS mail_sent_at TIMESTAMP;
+                ALTER TABLE licenses ADD COLUMN IF NOT EXISTS mail_error   TEXT;
             """)
 
             # 既存データの移行（初回のみ実質的に効く）。
@@ -118,6 +134,71 @@ def deactivate_license(license_key: str):
                 "UPDATE licenses SET status = 'inactive' WHERE license_key = %s",
                 (license_key,),
             )
+
+
+# ── チェックアウト紐づけ／メール送付状態 ───────────────────
+# /thanks でのキー表示と、メール送信失敗の検知に使う。
+
+# /thanks からキーを返してよい時間（発行からの分数）。
+# checkout_id はURLに載るため、ブラウザ履歴や共有リンクから漏れうる。
+# 「購入直後の本人」以外には返さないよう、短い時間で締める。
+CHECKOUT_LOOKUP_WINDOW_MINUTES = 30
+
+
+def link_checkout(license_key: str, checkout_id: str) -> None:
+    """発行したライセンスにチェックアウトIDを紐づける。"""
+    if not checkout_id:
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE licenses SET checkout_id = %s WHERE license_key = %s",
+                (checkout_id, license_key),
+            )
+
+
+def set_mail_status(license_key: str, status: str, error: str = None) -> None:
+    """メール送付の結果を記録する。status は sent / failed / manual。
+    ここで例外を出すとWebhookが落ちるため、呼び出し側で握りつぶすこと。"""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            if status == "sent":
+                cur.execute(
+                    """UPDATE licenses
+                          SET mail_status = 'sent',
+                              mail_sent_at = CURRENT_TIMESTAMP,
+                              mail_error = NULL
+                        WHERE license_key = %s""",
+                    (license_key,),
+                )
+            else:
+                cur.execute(
+                    """UPDATE licenses
+                          SET mail_status = %s, mail_error = %s
+                        WHERE license_key = %s""",
+                    (status, (error or "")[:500], license_key),
+                )
+
+
+def find_license_by_checkout(checkout_id: str):
+    """チェックアウトIDからライセンスを引く。発行直後の一定時間だけ返す。
+    見つからない場合と時間切れの場合は、区別せず None を返す
+    （IDの推測に手がかりを与えないため）。"""
+    if not checkout_id:
+        return None
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT license_key, plan, expires_at, status
+                     FROM licenses
+                    WHERE checkout_id = %s
+                      AND status = 'active'
+                      AND created_at > CURRENT_TIMESTAMP
+                                       - (%s * INTERVAL '1 minute')""",
+                (checkout_id, CHECKOUT_LOOKUP_WINDOW_MINUTES),
+            )
+            row = cur.fetchone()
+    return dict(row) if row else None
 
 
 # ── 使用量（rate_limit.py から使用） ───────────────────────

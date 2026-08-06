@@ -28,6 +28,7 @@ from fastapi import APIRouter, Request, HTTPException
 from database import create_license, extend_license
 from db_redesign import (
     find_license_by_subscription, link_subscription, deactivate_license,
+    link_checkout, set_mail_status,
 )
 from plans import plan_months, DEFAULT_PLAN
 
@@ -57,19 +58,36 @@ STRICT_PRODUCT_MAPPING = True
 AUTO_APPLY_PLAN_CHANGE = True
 
 
+def _record_mail_status(license_key: str, status: str, error: str = None) -> None:
+    """送付結果をDBに残す。ここで失敗してもWebhookは落とさない
+    （記録できなくても、ライセンス発行そのものは成立しているため）。"""
+    try:
+        set_mail_status(license_key, status, error)
+    except Exception as e:
+        log.error("could not record mail status (%s) for %s: %s",
+                  status, license_key, e)
+
+
 def _mail_license_key(email: str, license_key: str, plan: str,
                       expires_at: Optional[str] = None) -> None:
-    """ライセンスキーをメール送付する。失敗しても処理は続行する。
-    mailer は遅延importにしてある（未配置でもサーバーが起動できるようにするため）。"""
+    """ライセンスキーをメール送付し、結果をDBに記録する。失敗しても処理は続行する。
+    mailer は遅延importにしてある（未配置でもサーバーが起動できるようにするため）。
+
+    送信できなかった場合は mail_status='failed' を立てる。管理画面の一覧が
+    赤く表示されるので、ログを見ていなくても気づける。"""
     try:
         import mailer
         ok = mailer.send_license_key(email, license_key, plan, expires_at)
-        if not ok:
+        if ok:
+            _record_mail_status(license_key, "sent")
+        else:
             log.error("MANUAL ACTION REQUIRED: mail not sent. key=%s to=%s",
                       license_key, email)
+            _record_mail_status(license_key, "failed", "send returned false")
     except Exception as e:
         log.error("MANUAL ACTION REQUIRED: mailer error (%s). key=%s to=%s",
                   e, license_key, email)
+        _record_mail_status(license_key, "failed", str(e))
 
 
 class EventKind(str, Enum):
@@ -87,6 +105,8 @@ class PaymentEvent:
     subscription_id: str
     product_id: str
     plan: Optional[str] = None
+    # PolarのチェックアウトID。/thanks でのキー表示に使う（無くても発行は成立する）。
+    checkout_id: str = ""
 
 
 # 各MoRの商品ID → 自社プラン名。
@@ -190,6 +210,12 @@ def handle_payment_event(ev: PaymentEvent) -> None:
         res = create_license(ev.email, ev.plan)        # dict を返す
         key = res["license_key"]
         link_subscription(key, ev.provider, ev.subscription_id)
+        # チェックアウトIDを紐づける。/thanks がこれを鍵にキーを取りに来る。
+        # 失敗してもメールは届くので、ここでは落とさない。
+        try:
+            link_checkout(key, ev.checkout_id)
+        except Exception as e:
+            log.error("could not link checkout_id for %s: %s", key, e)
         log.info("license issued %s for %s", key, ev.subscription_id)
         # 顧客へライセンスキーをメール送付。
         # 送信に失敗しても例外は出さない（mailer側で握りつぶす）。Webhookを落とすと
@@ -204,6 +230,11 @@ def handle_payment_event(ev: PaymentEvent) -> None:
             # 初回購入の入金だけ先に届いた場合の保険。発行して紐づける。
             res = create_license(ev.email, ev.plan)
             link_subscription(res["license_key"], ev.provider, ev.subscription_id)
+            try:
+                link_checkout(res["license_key"], ev.checkout_id)
+            except Exception as e:
+                log.error("could not link checkout_id for %s: %s",
+                          res["license_key"], e)
             log.info("license issued on renew event %s", res["license_key"])
             _mail_license_key(ev.email, res["license_key"], ev.plan, res.get("expires_at"))
 
@@ -296,27 +327,6 @@ class PolarAdapter(PaymentAdapter):
         event_type = str(event.get("type") or "")
         data = event.get("data")
 
-        # ══════════════════════════════════════════════════════
-        # 【一時的な調査用ログ】/thanks へのライセンス表示を検討するため、
-        # Polarのペイロードに checkout_id が含まれるかを確認する。
-        # 確認が済んだらこのブロックごと削除すること。
-        # 個人情報をログに残さないよう、値ではなくキー名のみを出力する。
-        # ══════════════════════════════════════════════════════
-        try:
-            if isinstance(data, dict):
-                log.info("PAYLOAD-KEYS [%s]: %s", event_type, sorted(data.keys()))
-                hits = {}
-                for k, v in data.items():
-                    if "checkout" in k.lower():
-                        hits[k] = v if not isinstance(v, (dict, list)) else type(v).__name__
-                co = data.get("checkout")
-                if isinstance(co, dict):
-                    hits["checkout.id"] = co.get("id")
-                log.info("PAYLOAD-CHECKOUT [%s]: %s", event_type, hits or "NOT FOUND")
-        except Exception as _e:
-            log.warning("payload inspection failed: %s", _e)
-        # ══════════ 一時的な調査用ログ ここまで ══════════
-
         if event_type in self.ACTIVATE_EVENTS:
             # サブスクリプション本体のイベント → id がそのまま契約ID
             subscription_id = str(_get(data, "id", default="") or "")
@@ -371,6 +381,14 @@ class PolarAdapter(PaymentAdapter):
             log.info("polar event ignored (not handled): %s", event_type)
             return None
 
+        # チェックアウトID。subscription.created / order.paid / subscription.updated
+        # のいずれにも含まれることを実測で確認済み（2026-08-06）。
+        # 無くても発行処理そのものは成立するため、取れなければ空文字のまま進める。
+        checkout_id = str(_get(data, "checkout_id", default="") or "")
+        if not checkout_id:
+            co = _get(data, "checkout")
+            checkout_id = str(_get(co, "id", default="") or "")
+
         log.info("polar event accepted: %s (%s)", event_type, kind)
         return PaymentEvent(
             kind=kind,
@@ -378,6 +396,7 @@ class PolarAdapter(PaymentAdapter):
             email=_customer_email(data),
             subscription_id=subscription_id,
             product_id=_product_id(data),
+            checkout_id=checkout_id,
         )
 
 
