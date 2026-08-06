@@ -297,150 +297,18 @@ async def get_version(component: str):
 
 
 # ══════════════════════════════════════════
-# Webマイページ
+# マイページ（廃止）
 # ══════════════════════════════════════════
-@app.get("/mypage", response_class=HTMLResponse)
+# v3.0 で Excel/Chrome拡張を廃止したため、/mypage の内容
+# （Excelビューアの配布・旧手順の説明）は現行仕様と矛盾する。
+# ページ自体を削除するとURL直打ちで404になるため、ハブへ恒久リダイレクトする。
+# ライセンスの残日数はアプリ本体のサインイン後に表示される。
+@app.get("/mypage")
 async def mypage():
-    html = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JobSearch - My Page</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; background: #F5F7FA; color: #1A1A1A; }
-    .header { background: #1A2B4A; color: white; padding: 16px 24px; }
-    .header h1 { font-size: 20px; }
-    .header p  { font-size: 12px; opacity: 0.7; margin-top: 4px; }
-    .container { max-width: 720px; margin: 32px auto; padding: 0 16px; }
-    .card { background: white; border-radius: 10px; padding: 24px; margin-bottom: 20px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-    .card h2 { font-size: 15px; color: #1A2B4A; margin-bottom: 16px;
-               padding-bottom: 8px; border-bottom: 2px solid #EBF3FB; }
-    .form-row { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
-    .form-row label { font-size: 13px; color: #555; min-width: 120px; }
-    .form-row input { flex: 1; padding: 8px 12px; border: 1px solid #BFCFDF;
-                      border-radius: 6px; font-size: 13px; }
-    .btn { padding: 10px 20px; border: none; border-radius: 6px; font-size: 13px;
-           font-weight: bold; cursor: pointer; }
-    .btn-primary { background: #C55A11; color: white; }
-    .btn:hover { opacity: 0.88; }
-    .result-box { background: #F5F7FA; border: 1px solid #BFCFDF; border-radius: 6px;
-                  padding: 14px; margin-top: 12px; font-size: 13px; display: none; }
-    .result-box.ok    { background: #E2EFDA; border-color: #A9D18E; color: #375623; }
-    .result-box.error { background: #FCE4D6; border-color: #F4B8A0; color: #843C0C; }
-    .row-item { display: flex; justify-content: space-between; padding: 4px 0;
-                border-bottom: 1px solid rgba(0,0,0,0.06); font-size: 13px; }
-    .row-item:last-child { border-bottom: none; }
-    .row-label { color: #777; }
-    .row-value { font-weight: bold; }
-    .dl-btn { display: block; padding: 12px 16px; border-radius: 6px; text-decoration: none;
-               text-align: center; font-weight: bold; font-size: 13px; margin-bottom: 8px; }
-    .dl-excel { background: #1F7A4D; color: white; }
-    .dl-ext   { background: #2E75B6; color: white; }
-    .dl-btn:hover { opacity: 0.88; }
-    .footer { text-align: center; color: #999; font-size: 12px; padding: 24px; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
-             font-size: 11px; font-weight: bold; background: #E2EFDA; color: #375623; }
-  </style>
-</head>
-<body>
-<div class="header">
-  <h1>⚡ JobSearch</h1>
-  <p>My Page — License Check &amp; File Downloads</p>
-</div>
-
-<div class="container">
-
-  <div class="card">
-    <h2>🔑 License Check</h2>
-    <div class="form-row">
-      <label>License Key</label>
-      <input type="text" id="lic-key" placeholder="DMJS-XXXX-XXXX-XXXX">
-    </div>
-    <button class="btn btn-primary" onclick="checkLicense()">Check</button>
-    <div id="lic-result" class="result-box"></div>
-  </div>
-
-  <div class="card">
-    <h2>📥 File Downloads</h2>
-    <p style="font-size:12px;color:#777;margin-bottom:14px">
-      After confirming your license, open the web app below. The Excel viewer is optional.
-    </p>
-    <a href="/" class="dl-btn dl-excel">
-      🚀 Open the web app
-    </a>
-    <a href="/download/excel" class="dl-btn dl-ext">
-      📊 Download Excel File (optional)
-    </a>
-  </div>
-
-  <div class="card">
-    <h2>📖 How to use</h2>
-    <ol style="font-size:13px;line-height:2;padding-left:20px;color:#333">
-      <li>Open the web app and sign in with your license key</li>
-      <li>Fill in your profile (skills, desired rate, keywords) and save it</li>
-      <li>On the job board, open its job search page and sort by newest</li>
-      <li>Select the page (Ctrl/⌘+A), copy it (Ctrl/⌘+C), and paste it into the app</li>
-      <li>Press "Score these jobs" to get the triage board</li>
-      <li>Optionally download the CSV and import it into the Excel viewer</li>
-    </ol>
-    <p style="font-size:12px;color:#777;margin-top:10px">
-      No browser extension or API key of your own is required.
-    </p>
-  </div>
-
-</div>
-
-<div class="footer">© 2026 JobSearch</div>
-
-<script>
-async function checkLicense() {
-  const key = document.getElementById('lic-key').value.trim();
-  if (!key) { alert('Please enter your license key'); return; }
-
-  const box = document.getElementById('lic-result');
-  box.style.display = 'block';
-  box.className = 'result-box';
-  box.innerHTML = 'Checking...';
-
-  try {
-    const res = await fetch('/license/validate', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({license_key: key}),
-    });
-    const data = await res.json();
-
-    if (res.ok && data.status === 'valid') {
-      const lic = data.license;
-      const ver = data.versions;
-      box.className = 'result-box ok';
-      box.innerHTML =
-        '<div style="font-weight:bold;margin-bottom:8px">' +
-        '✅ License Valid <span class="badge">' + lic.days_left + ' days left</span></div>' +
-        '<div class="row-item"><span class="row-label">Plan</span><span class="row-value">' + lic.plan + '</span></div>' +
-        '<div class="row-item"><span class="row-label">Expires On</span><span class="row-value">' + lic.expires_at + '</span></div>' +
-        '<div class="row-item"><span class="row-label">Latest Excel File</span><span class="row-value">v' + ver.excel + '</span></div>';
-    } else {
-      box.className = 'result-box error';
-      box.innerHTML = '❌ ' + (data.message || 'Invalid license key');
-    }
-  } catch(e) {
-    box.className = 'result-box error';
-    box.innerHTML = '❌ Could not connect to the server';
-  }
-}
-</script>
-</body>
-</html>"""
-    return HTMLResponse(content=html)
+    """旧マイページ。ハブ（/）へ恒久リダイレクト。"""
+    return RedirectResponse("/", status_code=301)
 
 
-# ══════════════════════════════════════════
-# ファイルダウンロード
-# ══════════════════════════════════════════
 # ══════════════════════════════════════════
 # ファイルダウンロード（DBに保存されたファイルを配信）
 # ══════════════════════════════════════════
