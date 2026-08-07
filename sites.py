@@ -20,13 +20,21 @@ SITES = {
         # /app/{site} の STEP1 見出し
         "paste_heading": "Paste jobs from Upwork",
         # 貼り付け欄のプレースホルダー（コピー手順の案内）
+        # 「読み込みを待つ」を必ず入れること。Upworkは求人を数件ずつ遅延読み込みする
+        # ため、開いた直後に全選択すると2〜3件しかコピーされない。しかもエラーは
+        # 出ず「求人が少なかった」ようにしか見えないので、利用者は原因に気づけない。
         "paste_placeholder": (
             "Go to Upwork's job search page (not Saved Jobs or Invites) and sort by "
-            "\"Most Recent\". Press Ctrl/⌘+A to select the page, then Ctrl/⌘+C to copy. "
-            "Paste it here — multiple pages are fine, noise is ignored."
+            "\"Most Recent\". Scroll to the bottom and wait until every listing has "
+            "loaded — Upwork loads them a few at a time, and anything not yet on "
+            "screen will not be copied. Then press Ctrl/⌘+A to select the page and "
+            "Ctrl/⌘+C to copy. Paste it here — multiple pages are fine, noise is ignored."
         ),
         # 貼り付け欄の下に出す補足
-        "paste_tip": "Tip: use the job search page, not Saved Jobs or Invites.",
+        "paste_tip": (
+            "Tip: scroll to the bottom first so every listing loads, and use the "
+            "job search page — not Saved Jobs or Invites."
+        ),
         # CSVダウンロード時のファイル名
         "csv_filename": "upwork_result.csv",
         # 採点プロンプト内で「どのサイトから貼られたか」をAIに伝える文言
@@ -43,6 +51,7 @@ SITES = {
     # "freelancer": {
     #     "label": "Freelancer.com",
     #     "paste_heading": "Paste jobs from Freelancer.com",
+    #     # 遅延読み込みするサイトでは「最後までスクロールして待つ」を必ず入れる
     #     "paste_placeholder": "…そのサイトでのコピー手順…",
     #     "paste_tip": "",
     #     "csv_filename": "freelancer_result.csv",
