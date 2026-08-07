@@ -138,7 +138,7 @@ are appended below by the server. Follow that output format exactly."""
             cur.execute("SELECT COUNT(*) FROM ai_settings")
             if cur.fetchone()[0] == 0:
                 for key, value, note in [
-                    ('default_model',          'gemini-3.5-flash',     'デフォルトのGeminiモデル'),
+                    ('default_model',          'gemini-3.1-flash-lite','デフォルトのGeminiモデル'),
                     ('max_output_tokens',      '4096',                 'AI応答の最大トークン数'),
                     ('temperature',            '0.3',                  '応答のランダム性（0〜1）'),
                     ('response_mime_type',     'application/json',     '応答の形式'),

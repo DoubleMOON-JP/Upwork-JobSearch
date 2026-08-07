@@ -1285,8 +1285,13 @@ textarea {{ min-height: 400px; resize: vertical; }}
 <div class="container">
 <h1>📝 {title}</h1>
 <div class="placeholder-help">
-利用可能なプレースホルダー: {{skills}}, {{category}}, {{min_rate}}, {{exclude_line}},
-{{prefer_line}}, {{ai_request_line}}, {{jobs_text}} ※ {{ と }} はテンプレート内では {{{{ と }}}} と書く必要があります
+<b>ここには「採点の基準」だけを書いてください。</b><br>
+以下はシステムが自動で付け足すため、テンプレート内に書く必要はありません。<br>
+・フリーランスのプロフィール（スキル / 時給 / キーワード）<br>
+・貼り付けられた求人テキスト<br>
+・出力形式（JSON）の指定<br>
+・利用者からAIへの要望<br>
+※ プレースホルダー（{{skills}} など）は使えません。書いてもそのままAIに送られます。
 </div>
 <label>対象サイト</label>
 <select id="p-site" style="width:100%;padding:8px 12px;border:1px solid #BFCFDF;border-radius:5px;font-size:13px">
