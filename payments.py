@@ -28,7 +28,7 @@ from fastapi import APIRouter, Request, HTTPException
 from database import create_license, extend_license
 from db_redesign import (
     find_license_by_subscription, link_subscription, deactivate_license,
-    link_checkout, set_mail_status,
+    link_checkout, set_mail_status, set_license_ref,
 )
 from plans import plan_months, DEFAULT_PLAN
 
@@ -122,6 +122,8 @@ class PaymentEvent:
     plan: Optional[str] = None
     # PolarのチェックアウトID。/thanks でのキー表示に使う（無くても発行は成立する）。
     checkout_id: str = ""
+    # 紹介コード（SNS流入計測）。付いていないことの方が多い。
+    ref_code: str = ""
 
 
 # 各MoRの商品ID → 自社プラン名。
@@ -231,7 +233,14 @@ def handle_payment_event(ev: PaymentEvent) -> None:
             link_checkout(key, ev.checkout_id)
         except Exception as e:
             log.error("could not link checkout_id for %s: %s", key, e)
-        log.info("license issued %s for %s", key, ev.subscription_id)
+        # 紹介コード。計測用の付加情報なので、失敗しても発行は続行する。
+        try:
+            if ev.ref_code:
+                set_license_ref(key, ev.ref_code)
+        except Exception as e:
+            log.error("could not link ref_code for %s: %s", key, e)
+        log.info("license issued %s for %s (ref=%s)",
+                 key, ev.subscription_id, ev.ref_code or "-")
         # 顧客へライセンスキーをメール送付。
         # 送信に失敗しても例外は出さない（mailer側で握りつぶす）。Webhookを落とすと
         # Polarが再送し、二重処理の原因になるため。失敗時はログを見て手動送付する。
@@ -404,6 +413,18 @@ class PolarAdapter(PaymentAdapter):
             co = _get(data, "checkout")
             checkout_id = str(_get(co, "id", default="") or "")
 
+        # 紹介コード。Polarのチェックアウトリンクに付けたクエリは
+        # メタデータへ格納される。reference_id と utm_source の両方を
+        # 送っているので、取れた方を使う（Polar側の仕様変更に対する保険）。
+        ref_code = ""
+        meta = _get(data, "metadata")
+        if isinstance(meta, dict):
+            for key in ("reference_id", "utm_source", "ref"):
+                val = meta.get(key)
+                if val:
+                    ref_code = str(val).strip()[:64]
+                    break
+
         log.info("polar event accepted: %s (%s)", event_type, kind)
         return PaymentEvent(
             kind=kind,
@@ -412,6 +433,7 @@ class PolarAdapter(PaymentAdapter):
             subscription_id=subscription_id,
             product_id=_product_id(data),
             checkout_id=checkout_id,
+            ref_code=ref_code,
         )
 
 

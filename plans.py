@@ -12,9 +12,11 @@
 
 PLANS = {
     # 標準プラン（$9/月）
-    "1month":     {"months": 1, "monthly_cap": 100, "label": "Standard（月100回）"},
+    "1month":     {"months": 1, "monthly_cap": 100, "label": "Standard（月100回）",
+                   "price_usd": 9},
     # 上位プラン（$15/月）
-    "1month_pro": {"months": 1, "monthly_cap": 300, "label": "Pro（月300回）"},
+    "1month_pro": {"months": 1, "monthly_cap": 300, "label": "Pro（月300回）",
+                   "price_usd": 15},
 }
 
 # 対応表に無いプラン名が来た時のフォールバック先。
@@ -32,6 +34,14 @@ def plan_months(plan: str) -> int:
 
 def plan_monthly_cap(plan: str) -> int:
     return PLANS.get(plan, PLANS[DEFAULT_PLAN])["monthly_cap"]
+
+
+def plan_price_usd(plan: str) -> int:
+    """月額（USD）。紹介リンク管理のMRR集計で使う。
+    旧プラン（3month/6month/1year）は現在販売しておらず月額換算もできないため 0 を返す。
+    集計上は「金額不明」として扱われる。"""
+    entry = PLANS.get(plan)
+    return entry.get("price_usd", 0) if entry else 0
 
 
 def plan_label(plan: str) -> str:

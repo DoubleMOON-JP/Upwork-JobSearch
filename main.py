@@ -4,10 +4,12 @@ main.py - JobSearch 本番サーバー v3.8（マルチ求人サイト対応）
 """
 import os
 import re
+import io
+import csv
 import json
 import logging
 import secrets as sec_module
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # アプリ側の log.info(...) を Render のログに出す。
 # 未設定だとルートロガーが WARNING のままで、決済Webhookの
@@ -39,8 +41,13 @@ from db_redesign import (                                  # DBマイグレー�
     migrate, get_promo, save_promo, apply_plan_change,
     find_license_by_checkout, set_mail_status,             # /thanks でのキー表示・メール送付状態
     get_license_row,                                       # キー再送で使用
+    record_referral_visit, referral_exists,                # 紹介リンク（SNS流入計測）
+    list_referrals, create_referral, set_referral_active,
+    referral_stats, referral_detail_rows,
 )
-from plans import PLANS, plan_label, is_valid_plan       # プラン定義（単一情報源）
+from plans import (                                      # プラン定義（単一情報源）
+    PLANS, plan_label, is_valid_plan, plan_price_usd,
+)
 from sites import (                                      # 対応求人サイト定義（単一情報源）
     SITES, DEFAULT_SITE, get_site, is_valid_site, site_label, enabled_sites,
 )
@@ -147,6 +154,30 @@ async def root():
         fallback="<h1>JobSearch</h1><p>hub.html not found.</p>",
         status=200,
     )
+
+
+@app.get("/r/{code}")
+async def referral_redirect(code: str, request: Request):
+    """紹介リンク。訪問を記録してLPへ送る。
+
+    SNSやインフルエンサーに配る短縮URL。/r/ という名前空間に置くことで、
+    将来 /for/{site} などのパスと衝突しないようにしている。
+
+    未登録のコードでも404にはせず、普通にLPを表示する。
+    宣伝リンクを踏んだ人にエラー画面を見せる方が損失が大きいため
+    （記録だけが行われない）。
+    """
+    code = (code or "").strip()
+    # コードの形式を制限（英数字・ハイフン・アンダースコアのみ）
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", code):
+        try:
+            record_referral_visit(code, request.headers.get("user-agent", ""))
+        except Exception as e:
+            # 記録に失敗してもリダイレクトは続ける。計測は付加機能であり、
+            # ここで止めると宣伝リンクそのものが機能しなくなる。
+            log.error("could not record referral visit (%s): %s", code, e)
+        return RedirectResponse(f"/for/{DEFAULT_SITE}?ref={code}", status_code=302)
+    return RedirectResponse("/", status_code=302)
 
 
 @app.get("/for/{site}", response_class=HTMLResponse)
@@ -1222,6 +1253,331 @@ async def admin_backup(username: str = Depends(verify_admin)):
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+# ══════════════════════════════════════════
+# 紹介リンク管理（SNS流入計測）
+# ══════════════════════════════════════════
+# 訪問と購入を累積で持ち、リセットはしない。画面側で期間を切り替える。
+#
+# 【計測の限界】以下は追跡できないため、記録される数字は実際より少なくなる。
+#   ・スマホでリンクを踏み、後からPCで購入した場合
+#   ・リンクを踏んだ後にブラウザのデータを消してから購入した場合
+#   ・リンクを経由せず検索などで直接来た場合
+# 傾向の比較には使えるが、絶対値として信用しすぎないこと。
+# インフルエンサーへの報酬計算にはPolarの割引コードを併用する方が確実。
+
+def _ref_period(period: str):
+    """画面のボタンに対応する期間を (from, to) で返す。None は無制限。"""
+    today = datetime.today().date()
+    if period == "this_month":
+        return today.replace(day=1).isoformat(), today.isoformat()
+    if period == "last_month":
+        first_this = today.replace(day=1)
+        last_prev = first_this - timedelta(days=1)
+        return last_prev.replace(day=1).isoformat(), last_prev.isoformat()
+    if period == "30d":
+        return (today - timedelta(days=30)).isoformat(), today.isoformat()
+    return None, None          # all
+
+
+def _ref_mrr(plans_csv: str) -> int:
+    """継続中ライセンスのプラン名（カンマ区切り）から月額合計を出す。"""
+    if not plans_csv:
+        return 0
+    return sum(plan_price_usd(p.strip()) for p in plans_csv.split(",") if p.strip())
+
+
+@app.get("/admin/referrals", response_class=HTMLResponse)
+async def admin_referrals(period: str = "all", username: str = Depends(verify_admin)):
+    d_from, d_to = _ref_period(period)
+    try:
+        stats = referral_stats(d_from, d_to)
+    except Exception as e:
+        log.error("referral stats failed: %s", e)
+        stats = []
+
+    base = (BASE_URL or "").rstrip("/")
+
+    rows = ""
+    for st in stats:
+        code = st["code"]
+        visits = st["human_visits"] or 0
+        bots = (st["visits"] or 0) - visits
+        purchases = st["purchases"] or 0
+        active_cnt = st["active_cnt"] or 0
+        mrr = _ref_mrr(st.get("active_plans"))
+        cvr = f"{(purchases / visits * 100):.1f}%" if visits else "—"
+        url = f"{base}/r/{code}"
+
+        if st["is_active"]:
+            state = '<span style="color:#375623">有効</span>'
+            btn = (f'<button onclick="toggleRef(\'{esc(code)}\', false)" '
+                   f'style="font-size:11px;padding:3px 7px;cursor:pointer">停止</button>')
+            row_style = ""
+        else:
+            state = '<span style="color:#999">停止中</span>'
+            btn = (f'<button onclick="toggleRef(\'{esc(code)}\', true)" '
+                   f'style="font-size:11px;padding:3px 7px;cursor:pointer">再開</button>')
+            row_style = ' style="opacity:.55"'
+
+        bot_note = (f'<span style="color:#BBB;font-size:10px"> (+bot {bots})</span>'
+                    if bots else "")
+
+        rows += f"""
+        <tr{row_style}>
+          <td style="font-family:monospace;font-size:12px">{esc(code)}</td>
+          <td style="font-size:12px">{esc(st.get('channel') or '—')}</td>
+          <td style="font-size:12px">{esc(st.get('owner') or '—')}</td>
+          <td style="text-align:right">{visits}{bot_note}</td>
+          <td style="text-align:right"><b>{purchases}</b></td>
+          <td style="text-align:right">{cvr}</td>
+          <td style="text-align:right">{active_cnt}</td>
+          <td style="text-align:right">${mrr}</td>
+          <td>{state}</td>
+          <td style="font-size:11px;color:#777">{esc(st.get('note') or '')}</td>
+          <td>
+            <button onclick="copyUrl('{esc(url)}')"
+              style="font-size:11px;padding:3px 7px;cursor:pointer">URLコピー</button>
+            {btn}
+          </td>
+        </tr>"""
+
+    if not rows:
+        rows = ('<tr><td colspan="11" style="text-align:center;color:#999;padding:24px">'
+                '紹介コードがまだ登録されていません</td></tr>')
+
+    def tab(key, label):
+        on = (period == key)
+        style = ("background:#1F3864;color:#fff" if on
+                 else "background:#F0F4F8;color:#2E75B6")
+        return (f'<a href="/admin/referrals?period={key}" '
+                f'style="{style};padding:5px 12px;border-radius:4px;'
+                f'text-decoration:none;font-size:12px;margin-right:6px">{label}</a>')
+
+    tabs = (tab("all", "全期間") + tab("this_month", "今月")
+            + tab("last_month", "先月") + tab("30d", "過去30日"))
+
+    html = f"""<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>紹介リンク管理 - JobSearch</title>
+<style>
+* {{ box-sizing: border-box; }}
+body {{ font-family: "Segoe UI", "Hiragino Sans", sans-serif; background: #F0F4F8;
+  margin: 0; padding: 24px; color: #1F3864; }}
+.container {{ max-width: 1280px; margin: 0 auto; }}
+.card {{ background: #fff; border-radius: 8px; padding: 20px 24px; margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08); }}
+h1 {{ font-size: 20px; margin: 0 0 18px; }}
+h2 {{ font-size: 14px; margin: 0 0 14px; padding-bottom: 8px;
+  border-bottom: 1px solid #DCE6F1; }}
+table {{ width: 100%; border-collapse: collapse; }}
+th {{ background: #1F3864; color: #fff; font-size: 11px; padding: 8px 6px;
+  text-align: left; }}
+td {{ padding: 8px 6px; border-bottom: 1px solid #EDF1F5; font-size: 13px; }}
+input, select {{ padding: 7px 10px; border: 1px solid #BFCFDF; border-radius: 5px;
+  font-size: 13px; }}
+.btn {{ background: #C05621; color: #fff; border: none; padding: 8px 18px;
+  border-radius: 5px; cursor: pointer; font-size: 13px; }}
+.hint {{ font-size: 11px; color: #777; margin-top: 8px; line-height: 1.7; }}
+a.dl {{ color: #2E75B6; font-size: 12px; margin-right: 18px; }}
+.msg {{ display:none; padding: 8px 12px; border-radius: 5px; font-size: 12px;
+  margin-top: 10px; }}
+</style></head><body>
+<div class="container">
+  <h1>🔗 紹介リンク管理</h1>
+  <p style="font-size:12px;margin:-8px 0 18px">
+    <a href="/admin" style="color:#2E75B6">← 管理トップ</a>
+    <a href="/admin/licenses" style="color:#2E75B6;margin-left:14px">ライセンス一覧</a>
+  </p>
+
+  <div class="card">
+    <h2>コードを登録</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+      <input id="r-code" placeholder="jen-x-0810" style="width:190px" />
+      <select id="r-channel">
+        <option value="">種別</option>
+        <option>X</option><option>LinkedIn</option><option>Reddit</option>
+        <option>Facebook</option><option>YouTube</option><option>Blog</option>
+        <option>Email</option><option>Other</option>
+      </select>
+      <input id="r-owner" placeholder="担当者（Jennifer など）" style="width:190px" />
+      <input id="r-note" placeholder="メモ（任意）" style="width:250px" />
+      <button class="btn" onclick="addRef()">登録</button>
+    </div>
+    <div id="r-msg" class="msg"></div>
+    <div class="hint">
+      推奨する付け方：<code>担当者-種別-日付</code>（例 <code>jen-x-0810</code>）。
+      外部のインフルエンサーは <code>infl-tanaka</code> のように日付なしにすると使い回せます。<br>
+      登録すると <code>{esc(base)}/r/コード</code> が使えるようになります。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>成績</h2>
+    <div style="margin-bottom:12px">{tabs}</div>
+    <table>
+      <thead>
+        <tr><th>コード</th><th>種別</th><th>担当者</th><th style="text-align:right">訪問</th>
+            <th style="text-align:right">購入</th><th style="text-align:right">転換率</th>
+            <th style="text-align:right">継続中</th><th style="text-align:right">MRR</th>
+            <th>状態</th><th>メモ</th><th>操作</th></tr>
+      </thead>
+      <tbody>{rows}</tbody>
+    </table>
+    <div class="hint">
+      <b>訪問・購入</b>は選択した期間内の件数。<b>継続中・MRR</b>は期間に関係なく「現時点」の値です。<br>
+      ロボットと判定したアクセスは訪問数から除いています（括弧内が除外数）。<br>
+      スマホで踏んでPCで購入した場合などは追跡できないため、実際の貢献はこの数字より多くなります。
+      傾向の比較には使えますが、絶対値として信用しすぎないでください。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>CSVダウンロード</h2>
+    <a class="dl" href="/admin/referrals/csv?period={period}">集計CSV（この期間）</a>
+    <a class="dl" href="/admin/referrals/csv/detail">明細CSV（ライセンス1件ごと）</a>
+  </div>
+</div>
+<script>
+"use strict";
+function show(msg, ok) {{
+  const el = document.getElementById('r-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.background = ok ? '#E2EFDA' : '#FCE4D6';
+  el.style.color = ok ? '#375623' : '#843C0C';
+}}
+
+async function addRef() {{
+  const code = document.getElementById('r-code').value.trim();
+  if (!code) {{ show('コードを入力してください', false); return; }}
+  const res = await fetch('/admin/referral/create', {{
+    method: 'POST', headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{
+      code: code,
+      channel: document.getElementById('r-channel').value,
+      owner: document.getElementById('r-owner').value.trim(),
+      note: document.getElementById('r-note').value.trim(),
+    }}),
+  }});
+  const data = await res.json();
+  if (res.ok && data.success) {{ location.reload(); }}
+  else {{ show('エラー: ' + (data.message || '不明なエラー'), false); }}
+}}
+
+async function toggleRef(code, active) {{
+  const res = await fetch('/admin/referral/active', {{
+    method: 'POST', headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{code: code, active: active}}),
+  }});
+  if (res.ok) {{ location.reload(); }}
+  else {{ alert('変更できませんでした'); }}
+}}
+
+function copyUrl(url) {{
+  if (navigator.clipboard && navigator.clipboard.writeText) {{
+    navigator.clipboard.writeText(url).then(function () {{
+      show('コピーしました: ' + url, true);
+    }}, function () {{ show(url, true); }});
+  }} else {{
+    show(url, true);
+  }}
+}}
+</script>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+@app.post("/admin/referral/create")
+async def admin_referral_create(request: Request,
+                                username: str = Depends(verify_admin)):
+    body = await request.json()
+    code = (body.get("code") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", code):
+        return JSONResponse(
+            status_code=400,
+            content={"message": "コードは英数字・ハイフン・アンダースコアのみ（64文字以内）"})
+    try:
+        if referral_exists(code):
+            return JSONResponse(status_code=400,
+                                content={"message": "そのコードは既に登録されています"})
+        create_referral(code, body.get("channel") or "",
+                        body.get("owner") or "", body.get("note") or "")
+    except Exception as e:
+        log.error("referral create failed: %s", e)
+        return JSONResponse(status_code=500, content={"message": f"登録エラー: {e}"})
+    return {"success": True, "code": code}
+
+
+@app.post("/admin/referral/active")
+async def admin_referral_active(request: Request,
+                                username: str = Depends(verify_admin)):
+    body = await request.json()
+    code = (body.get("code") or "").strip()
+    if not code:
+        return JSONResponse(status_code=400, content={"message": "codeが必要です"})
+    try:
+        set_referral_active(code, bool(body.get("active")))
+    except Exception as e:
+        log.error("referral toggle failed: %s", e)
+        return JSONResponse(status_code=500, content={"message": str(e)})
+    return {"success": True}
+
+
+def _csv_response(rows, header, filename):
+    """CSVを返す。ExcelでそのままUTF-8として開けるようBOMを付ける。"""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(header)
+    for r in rows:
+        w.writerow(r)
+    return Response(
+        content=("\ufeff" + buf.getvalue()).encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/admin/referrals/csv")
+async def admin_referrals_csv(period: str = "all",
+                              username: str = Depends(verify_admin)):
+    d_from, d_to = _ref_period(period)
+    stats = referral_stats(d_from, d_to)
+    rows = []
+    for st in stats:
+        visits = st["human_visits"] or 0
+        purchases = st["purchases"] or 0
+        rows.append([
+            st["code"], st.get("channel") or "", st.get("owner") or "",
+            visits, (st["visits"] or 0) - visits, purchases,
+            (f"{(purchases / visits * 100):.1f}" if visits else ""),
+            st["active_cnt"] or 0, _ref_mrr(st.get("active_plans")),
+            "有効" if st["is_active"] else "停止中",
+            st.get("note") or "",
+        ])
+    header = ["コード", "種別", "担当者", "訪問（人）", "訪問（bot）", "購入",
+              "転換率(%)", "継続中", "MRR(USD)", "状態", "メモ"]
+    name = f"referrals_{period}_{datetime.now().strftime('%Y%m%d')}.csv"
+    return _csv_response(rows, header, name)
+
+
+@app.get("/admin/referrals/csv/detail")
+async def admin_referrals_csv_detail(username: str = Depends(verify_admin)):
+    rows = []
+    for r in referral_detail_rows():
+        rows.append([
+            r.get("ref_code") or "", r.get("channel") or "", r.get("owner") or "",
+            r.get("license_key") or "", r.get("email") or "",
+            plan_label(r.get("plan") or ""), plan_price_usd(r.get("plan") or ""),
+            r.get("status") or "",
+            str(r.get("created_at") or "")[:19], str(r.get("expires_at") or ""),
+        ])
+    header = ["コード", "種別", "担当者", "ライセンスキー", "メール",
+              "プラン", "月額(USD)", "状態", "発行日時", "有効期限"]
+    name = f"referrals_detail_{datetime.now().strftime('%Y%m%d')}.csv"
+    return _csv_response(rows, header, name)
 
 
 # ── プロンプト管理API ──

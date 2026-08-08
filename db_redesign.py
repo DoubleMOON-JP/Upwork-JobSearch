@@ -62,6 +62,35 @@ def migrate():
                 --   failed  … 送信失敗（要手動対応。一覧で赤表示）
                 --   manual  … 管理画面からの手動発行（メールは送っていない）
                 --   NULL    … 不明（この機能を入れる前に発行された分）
+                -- ── 紹介リンク（SNS流入計測）────────────────────
+                -- スタッフやインフルエンサーに配る短縮URL /r/{code} の定義。
+                -- channel（X/LinkedIn等）と owner（担当者）を分けて持つことで、
+                -- 「チャネル別」「担当者別」「投稿別」の3通りの集計ができる。
+                CREATE TABLE IF NOT EXISTS referrals (
+                    id         SERIAL PRIMARY KEY,
+                    code       TEXT NOT NULL UNIQUE,
+                    channel    TEXT,
+                    owner      TEXT,
+                    note       TEXT,
+                    is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                -- 訪問は1件ずつ日時つきで残す（集計してからでは期間を切り直せない）。
+                -- リセットは行わず、画面側で期間を指定して集計する。
+                CREATE TABLE IF NOT EXISTS referral_visits (
+                    id         SERIAL PRIMARY KEY,
+                    code       TEXT NOT NULL,
+                    visited_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    is_bot     BOOLEAN NOT NULL DEFAULT FALSE
+                );
+                CREATE INDEX IF NOT EXISTS idx_ref_visits
+                    ON referral_visits(code, visited_at);
+
+                -- 購入元の紹介コード。Polarのメタデータ経由で受け取る。
+                ALTER TABLE licenses ADD COLUMN IF NOT EXISTS ref_code TEXT;
+                CREATE INDEX IF NOT EXISTS idx_licenses_ref ON licenses(ref_code);
+
                 ALTER TABLE licenses ADD COLUMN IF NOT EXISTS mail_status  TEXT;
                 ALTER TABLE licenses ADD COLUMN IF NOT EXISTS mail_sent_at TIMESTAMP;
                 ALTER TABLE licenses ADD COLUMN IF NOT EXISTS mail_error   TEXT;
@@ -178,6 +207,172 @@ def set_mail_status(license_key: str, status: str, error: str = None) -> None:
                         WHERE license_key = %s""",
                     (status, (error or "")[:500], license_key),
                 )
+
+
+# ── 紹介リンク（SNS流入計測）────────────────────────────
+# 訪問と購入を別々に記録し、集計は都度SQLで行う。
+# 累積で持ち、リセットはしない（消すと過去を見返せなくなるため）。
+
+# 明らかな巡回ロボットは訪問数から除く。完全な判別はできないので、
+# 「疑わしいものに印を付ける」程度の扱いにとどめる。
+_BOT_HINTS = ("bot", "crawler", "spider", "slurp", "curl", "wget",
+              "python-requests", "headless", "preview", "monitor")
+
+
+def _looks_like_bot(user_agent: str) -> bool:
+    ua = (user_agent or "").lower()
+    if not ua:
+        return True          # UAが無いのは通常のブラウザではない
+    return any(h in ua for h in _BOT_HINTS)
+
+
+def list_referrals(include_inactive: bool = True):
+    """紹介コードの一覧。"""
+    sql = "SELECT * FROM referrals"
+    if not include_inactive:
+        sql += " WHERE is_active = TRUE"
+    sql += " ORDER BY is_active DESC, created_at DESC"
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql)
+            return [dict(r) for r in cur.fetchall()]
+
+
+def create_referral(code: str, channel: str = "", owner: str = "",
+                    note: str = "") -> dict:
+    """紹介コードを登録する。重複時は例外。"""
+    code = (code or "").strip()
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """INSERT INTO referrals (code, channel, owner, note)
+                        VALUES (%s, %s, %s, %s) RETURNING *""",
+                (code, channel or None, owner or None, note or None),
+            )
+            return dict(cur.fetchone())
+
+
+def set_referral_active(code: str, active: bool) -> None:
+    """停止／再開。削除はしない（過去の実績を残すため）。"""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE referrals SET is_active = %s WHERE code = %s",
+                (active, code),
+            )
+
+
+def referral_exists(code: str) -> bool:
+    if not code:
+        return False
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM referrals WHERE code = %s", (code,))
+            return cur.fetchone() is not None
+
+
+def record_referral_visit(code: str, user_agent: str = "") -> None:
+    """訪問を1件記録する。未登録コードは記録しない（無効なURLの乱造を防ぐ）。
+    ここで例外が出てもリダイレクト自体は続行させること。"""
+    if not referral_exists(code):
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO referral_visits (code, is_bot) VALUES (%s, %s)",
+                (code, _looks_like_bot(user_agent)),
+            )
+
+
+def set_license_ref(license_key: str, ref_code: str) -> None:
+    """発行したライセンスに紹介コードを紐づける。"""
+    if not ref_code:
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE licenses SET ref_code = %s WHERE license_key = %s",
+                (ref_code, license_key),
+            )
+
+
+def referral_stats(date_from: str = None, date_to: str = None):
+    """コードごとの成績。
+
+    訪問・購入は「期間内に発生した件数」、継続中は「現時点で有効な件数」。
+    この2つは性質が違うため、列を分けて返す（画面側でもそう表示する）。
+    date_from / date_to は 'YYYY-MM-DD'。None なら全期間。
+    """
+    where_v, where_l, params_v, params_l = [], [], [], []
+    if date_from:
+        where_v.append("v.visited_at >= %s")
+        params_v.append(date_from)
+        where_l.append("l.created_at >= %s")
+        params_l.append(date_from)
+    if date_to:
+        # 終了日を含めるため翌日未満で比較する
+        where_v.append("v.visited_at < (%s::date + 1)")
+        params_v.append(date_to)
+        where_l.append("l.created_at < (%s::date + 1)")
+        params_l.append(date_to)
+    vw = (" AND " + " AND ".join(where_v)) if where_v else ""
+    lw = (" AND " + " AND ".join(where_l)) if where_l else ""
+
+    sql = f"""
+        SELECT r.code, r.channel, r.owner, r.note, r.is_active, r.created_at,
+               COALESCE(v.visits, 0)      AS visits,
+               COALESCE(v.human, 0)       AS human_visits,
+               COALESCE(p.purchases, 0)   AS purchases,
+               COALESCE(a.active_cnt, 0)  AS active_cnt,
+               a.plans                    AS active_plans
+          FROM referrals r
+          LEFT JOIN (
+               SELECT v.code,
+                      COUNT(*)                                   AS visits,
+                      COUNT(*) FILTER (WHERE v.is_bot = FALSE)   AS human
+                 FROM referral_visits v
+                WHERE TRUE {vw}
+                GROUP BY v.code
+          ) v ON v.code = r.code
+          LEFT JOIN (
+               SELECT l.ref_code, COUNT(*) AS purchases
+                 FROM licenses l
+                WHERE l.ref_code IS NOT NULL {lw}
+                GROUP BY l.ref_code
+          ) p ON p.ref_code = r.code
+          LEFT JOIN (
+               SELECT l.ref_code,
+                      COUNT(*)                    AS active_cnt,
+                      STRING_AGG(l.plan, ',')     AS plans
+                 FROM licenses l
+                WHERE l.ref_code IS NOT NULL
+                  AND l.status = 'active'
+                  AND l.expires_at >= CURRENT_DATE
+                GROUP BY l.ref_code
+          ) a ON a.ref_code = r.code
+         ORDER BY r.is_active DESC, COALESCE(p.purchases, 0) DESC,
+                  COALESCE(v.visits, 0) DESC
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, params_v + params_l)
+            return [dict(r) for r in cur.fetchall()]
+
+
+def referral_detail_rows():
+    """明細（ライセンス1件ごと）。インフルエンサーへの支払根拠などに使う。"""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT l.ref_code, r.channel, r.owner,
+                          l.license_key, l.email, l.plan, l.status,
+                          l.created_at, l.expires_at
+                     FROM licenses l
+                     LEFT JOIN referrals r ON r.code = l.ref_code
+                    WHERE l.ref_code IS NOT NULL
+                    ORDER BY l.created_at DESC"""
+            )
+            return [dict(r) for r in cur.fetchall()]
 
 
 def get_license_row(license_key: str):
