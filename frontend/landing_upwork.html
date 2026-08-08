@@ -473,5 +473,76 @@ Proposals: 20 to 50 &nbsp; $0 spent<br />
   </div>
 </footer>
 
+<script>
+"use strict";
+/* ──────────────────────────────────────────────────────────
+   紹介コードの引き継ぎ（SNS流入計測）
+
+   /r/{code} を踏むと ?ref={code} 付きでこのページに来る。
+   コードを保存し、購入ボタンのURLに付けてPolarへ渡す。
+   Polarは reference_id / utm_source をチェックアウトのメタデータに格納し、
+   購入成立時に Order / Subscription へ引き継ぐ。それをWebhookで受け取る。
+
+   両方のパラメータを送っているのは、Polar側の仕様変更に対する保険。
+   サーバー側はどちらか取れた方を使う。
+
+   保存に localStorage を使うため、別のブラウザや端末で購入された場合は
+   追跡できない。計測は「取りこぼしのある下限値」として扱うこと。
+   ────────────────────────────────────────────────────────── */
+(function () {
+  var KEY = "js_ref";
+  var MAX_AGE_DAYS = 60;   // これより古い流入は無関係とみなす
+
+  function readParam(name) {
+    try {
+      return new URLSearchParams(window.location.search).get(name) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  /* 1. URLにコードがあれば保存する（新しい流入で上書き＝最後に踏んだ方を採用） */
+  var fromUrl = readParam("ref");
+  if (fromUrl && /^[A-Za-z0-9_-]{1,64}$/.test(fromUrl)) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ code: fromUrl, at: Date.now() }));
+    } catch (e) { /* プライベートモード等では保存できない。無視してよい */ }
+  }
+
+  /* 2. 保存済みのコードを取り出す（期限切れは使わない） */
+  function storedCode() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) { return ""; }
+      var obj = JSON.parse(raw);
+      if (!obj || !obj.code) { return ""; }
+      var ageDays = (Date.now() - (obj.at || 0)) / 86400000;
+      if (ageDays > MAX_AGE_DAYS) { return ""; }
+      return obj.code;
+    } catch (e) {
+      return "";
+    }
+  }
+
+  var code = fromUrl || storedCode();
+  if (!code) { return; }
+
+  /* 3. 購入ボタンのURLにパラメータを足す */
+  var links = document.querySelectorAll("a[data-checkout]");
+  for (var i = 0; i < links.length; i++) {
+    var a = links[i];
+    var href = a.getAttribute("href") || "";
+    if (!href || href.indexOf("reference_id=") !== -1) { continue; }
+    var sep = href.indexOf("?") === -1 ? "?" : "&";
+    a.setAttribute(
+      "href",
+      href + sep +
+        "reference_id=" + encodeURIComponent(code) +
+        "&utm_source=" + encodeURIComponent(code)
+    );
+  }
+})();
+</script>
+
 </body>
 </html>
