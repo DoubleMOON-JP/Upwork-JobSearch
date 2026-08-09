@@ -347,15 +347,38 @@ PAID_LICENSE_DELETE_GRACE_DAYS = 30
 
 
 def _can_delete(row: dict, grace_days: int = PAID_LICENSE_DELETE_GRACE_DAYS):
-    """削除してよいライセンスかを判定する。(可否, 理由) を返す。"""
+    """削除してよいライセンスかを判定する。(可否, 理由) を返す。
+
+    判定は「今それを使える人がいるか」を基準にする。使える状態のものを消すと、
+    顧客が突然サインインできなくなり、復旧の手段がない（キーを再発行しても
+    別のキーになる）。
+
+      ・決済に紐づくもの … 失効後 grace_days 経過するまで削除しない。
+        Polar は支払い失敗時に最長21日リトライするため、リトライ中に消すと
+        更新成功時に別のキーが新規発行されてしまう。
+      ・手動発行のもの   … 有効（status=active かつ期限内）なら削除しない。
+        無効化済み、または失効済みであれば猶予なしで削除できる。決済が
+        紐づかないので、後から蘇って二重発行になる余地がないため。
+
+    以前は手動発行を無条件に削除可としていたが、スタッフがクレーム対応で
+    発行した無償ライセンスやテスト用ライセンスが誤クリック一発で消えるため、
+    保護の対象に含めた。
+    """
     from datetime import timedelta
     is_paid = bool(row.get('subscription_id'))
     expires = row['expires_at']
     if isinstance(expires, str):
         expires = date.fromisoformat(expires)
 
+    # 無効化（revoked／返金など）されたものは status が active 以外になる。
+    # 列が無い行を渡された場合は「有効」とみなす（保護する側に倒す）。
+    is_active_status = (row.get('status') or 'active') == 'active'
+
     if not is_paid:
-        # 手動発行（テスト用・キャンペーン等）はいつでも削除可
+        # 手動発行（テスト用・キャンペーン・お詫び等）
+        if is_active_status and expires >= date.today():
+            return False, ('利用可能なライセンスは削除できません'
+                           '（先に無効化するか、失効をお待ちください）')
         return True, ''
     if expires >= date.today():
         return False, '決済に紐づく有効なライセンスは削除できません（失効を待ってください）'
