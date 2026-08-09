@@ -44,6 +44,7 @@ from db_redesign import (                                  # DBマイグレー�
     record_referral_visit, referral_exists,                # 紹介リンク（SNS流入計測）
     list_referrals, create_referral, set_referral_active,
     referral_stats, referral_detail_rows,
+    list_staff, create_staff, set_staff_active, set_staff_password,  # 担当者マスタ
 )
 from plans import (                                      # プラン定義（単一情報源）
     PLANS, plan_label, is_valid_plan, plan_price_usd,
@@ -285,6 +286,35 @@ async def admin_promo_save(request: Request, username: str = Depends(verify_admi
     )
 
 
+# ── 担当者マスタ（システム管理者のみ）──────────────────────
+@app.post("/admin/staff/create")
+async def admin_staff_create(request: Request, username: str = Depends(verify_admin)):
+    """担当者を登録する。パスワードはハッシュ化して保存される。"""
+    data = await request.json()
+    return create_staff(
+        login_id     = data.get("login_id", ""),
+        display_name = data.get("display_name", ""),
+        password     = data.get("password", ""),
+        note         = data.get("note", ""),
+    )
+
+
+@app.post("/admin/staff/{staff_id}/active")
+async def admin_staff_active(staff_id: int, request: Request,
+                             username: str = Depends(verify_admin)):
+    """有効／停止の切り替え。削除は用意していない（実績が追えなくなるため）。"""
+    data = await request.json()
+    return set_staff_active(staff_id, bool(data.get("active")))
+
+
+@app.post("/admin/staff/{staff_id}/password")
+async def admin_staff_password(staff_id: int, request: Request,
+                               username: str = Depends(verify_admin)):
+    """パスワードの再設定。本人からは変更できないため、管理者が行う。"""
+    data = await request.json()
+    return set_staff_password(staff_id, data.get("password", ""))
+
+
 @app.get("/ping")
 async def ping():
     return {
@@ -415,6 +445,41 @@ async def admin_page(username: str = Depends(verify_admin)):
     prompts  = get_all_prompts()
     files_all     = get_all_files()
     promo         = get_promo()
+    staff_all     = list_staff()
+
+    # 担当者マスタ一覧
+    # 削除ボタンは意図的に置いていない。停止しても表示名は残るため、
+    # 過去の紹介コードの担当者が不明にならない。
+    if staff_all:
+        staff_rows = ""
+        for s in staff_all:
+            if s['is_active']:
+                state = ('<span style="background:#E2EFDA;color:#375623;padding:2px 6px;'
+                         'border-radius:3px;font-size:11px">有効</span>')
+                toggle = (f'<button onclick="staffActive({s["id"]},false)" '
+                          'style="font-size:11px;padding:2px 6px;cursor:pointer">停止</button>')
+            else:
+                state = '<span style="color:#999;font-size:11px">停止中</span>'
+                toggle = (f'<button onclick="staffActive({s["id"]},true)" '
+                          'style="font-size:11px;padding:2px 6px;cursor:pointer">再開</button>')
+            created = s['created_at'].strftime('%Y-%m-%d') if s.get('created_at') else '－'
+            staff_rows += f"""
+            <tr>
+              <td>{s['id']}</td>
+              <td><b>{esc(s['display_name'])}</b></td>
+              <td style="font-family:monospace;font-size:12px">{esc(s['login_id'])}</td>
+              <td>{state}</td>
+              <td style="font-size:11px;color:#777">{esc(s.get('note') or '')}</td>
+              <td style="font-size:11px;color:#777">{created}</td>
+              <td>
+                {toggle}
+                <button onclick="staffPassword({s['id']},'{esc(s['display_name'])}')"
+                  style="font-size:11px;padding:2px 6px;cursor:pointer;margin-left:4px">PW変更</button>
+              </td>
+            </tr>"""
+    else:
+        staff_rows = ('<tr><td colspan="7" style="text-align:center;color:#999;padding:18px">'
+                      '担当者がまだ登録されていません</td></tr>')
 
     # ライセンス一覧
     # 発行プランの選択肢は plans.py から生成（定義とUIのズレを防ぐ）
@@ -571,6 +636,50 @@ async def admin_page(username: str = Depends(verify_admin)):
     <a href="/admin/licenses" class="btn btn-blue"
        style="text-decoration:none;display:inline-block">ライセンス一覧を開く →</a>
     <a href="/admin/backup" style="font-size:11px;color:#2E75B6;margin-left:14px">CSVバックアップ</a>
+  </div>
+
+  <!-- 紹介リンク管理への導線 -->
+  <div class="card">
+    <h2>🔗 紹介リンク管理</h2>
+    <p style="font-size:12px;color:#777;margin-bottom:12px">
+      SNS流入の計測。コードの登録、訪問・購入の集計、CSV出力を行えます。
+    </p>
+    <a href="/admin/referrals" class="btn btn-blue"
+       style="text-decoration:none;display:inline-block">紹介リンク管理を開く →</a>
+  </div>
+
+  <!-- 担当者マスタ -->
+  <div class="card">
+    <h2>👥 担当者マスタ</h2>
+    <p style="font-size:12px;color:#777;margin-bottom:12px">
+      紹介リンクの「担当者」に使う名前を管理します。ここに登録した表示名だけが選べるようになるため、
+      同じ人が複数の綴りで登録される事故を防げます。
+    </p>
+    <div class="form-row">
+      <label>表示名</label>
+      <input type="text" id="staff-name" placeholder="koji" style="max-width:150px">
+      <label>ログインID</label>
+      <input type="text" id="staff-login" placeholder="koji" style="max-width:150px">
+      <label>パスワード</label>
+      <input type="text" id="staff-pass" placeholder="8文字以上" style="max-width:170px">
+      <label>備考</label>
+      <input type="text" id="staff-note" placeholder="任意" style="min-width:140px">
+      <button class="btn btn-primary" onclick="staffCreate()">登録</button>
+    </div>
+    <div id="staff-msg" class="msg"></div>
+    <table style="margin-top:14px">
+      <thead>
+        <tr><th>ID</th><th>表示名</th><th>ログインID</th><th>状態</th>
+            <th>備考</th><th>登録日</th><th>操作</th></tr>
+      </thead>
+      <tbody>{staff_rows}</tbody>
+    </table>
+    <div style="font-size:11px;color:#777;margin-top:8px;line-height:1.7">
+      ・<b>表示名</b>が紹介リンクの担当者欄に記録されます。個人名そのままではなく短い呼称を推奨します（例：Jenn）。<br>
+      ・<b>ログインID／パスワード</b>はスタッフ用管理画面のサインインに使います（切り替えは次の段階で行うため、現時点ではまだ使われません）。<br>
+      ・パスワードはハッシュ化して保存され、画面に再表示できません。忘れた場合は「PW変更」で再設定してください。<br>
+      ・<b>削除はできません。</b>退職時は「停止」してください。過去の紹介コードの担当者が不明にならないようにするためです。
+    </div>
   </div>
 
   <!-- プロンプト管理 -->
@@ -777,6 +886,63 @@ async function delFile(id) {{
   const res = await fetch('/admin/file/' + id, {{method: 'DELETE'}});
   if (res.ok) location.reload();
   else alert('エラーが発生しました');
+}}
+
+async function staffCreate() {{
+  const name  = document.getElementById('staff-name').value.trim();
+  const login = document.getElementById('staff-login').value.trim();
+  const pass  = document.getElementById('staff-pass').value;
+  const note  = document.getElementById('staff-note').value.trim();
+  const msg   = document.getElementById('staff-msg');
+
+  if (!name || !login || !pass) {{
+    alert('表示名・ログインID・パスワードを入力してください');
+    return;
+  }}
+  const res = await fetch('/admin/staff/create', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{display_name: name, login_id: login, password: pass, note: note}})
+  }});
+  let data = {{}};
+  try {{ data = await res.json(); }} catch (e) {{}}
+  msg.style.display = 'block';
+  if (res.ok && data.success) {{
+    msg.className = 'msg ok';
+    msg.textContent = '登録しました：' + data.display_name;
+    setTimeout(() => location.reload(), 900);
+  }} else {{
+    msg.className = 'msg error';
+    msg.textContent = data.message || '登録できませんでした';
+  }}
+}}
+
+async function staffActive(id, active) {{
+  const word = active ? '再開' : '停止';
+  if (!confirm('この担当者を' + word + 'しますか？')) return;
+  const res = await fetch('/admin/staff/' + id + '/active', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{active: active}})
+  }});
+  let data = {{}};
+  try {{ data = await res.json(); }} catch (e) {{}}
+  if (res.ok && data.success) location.reload();
+  else alert(data.message || 'エラーが発生しました');
+}}
+
+async function staffPassword(id, name) {{
+  const pass = prompt(name + ' の新しいパスワードを入力してください（8文字以上）');
+  if (pass === null) return;
+  const res = await fetch('/admin/staff/' + id + '/password', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{password: pass}})
+  }});
+  let data = {{}};
+  try {{ data = await res.json(); }} catch (e) {{}}
+  if (res.ok && data.success) alert('パスワードを変更しました：' + data.display_name);
+  else alert(data.message || 'エラーが発生しました');
 }}
 
 async function savePromo() {{
@@ -1395,20 +1561,20 @@ a.dl {{ color: #2E75B6; font-size: 12px; margin-right: 18px; }}
   <div class="card">
     <h2>コードを登録</h2>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-      <input id="r-code" placeholder="jen-x-0810" style="width:190px" />
+      <input id="r-code" placeholder="koji-x-0810" style="width:190px" />
       <select id="r-channel">
         <option value="">種別</option>
         <option>X</option><option>LinkedIn</option><option>Reddit</option>
         <option>Facebook</option><option>YouTube</option><option>Blog</option>
         <option>Email</option><option>Other</option>
       </select>
-      <input id="r-owner" placeholder="担当者（Jennifer など）" style="width:190px" />
+      <input id="r-owner" placeholder="担当者（koji など）" style="width:190px" />
       <input id="r-note" placeholder="メモ（任意）" style="width:250px" />
       <button class="btn" onclick="addRef()">登録</button>
     </div>
     <div id="r-msg" class="msg"></div>
     <div class="hint">
-      推奨する付け方：<code>担当者-種別-日付</code>（例 <code>jen-x-0810</code>）。
+      推奨する付け方：<code>担当者-種別-日付</code>（例 <code>koji-x-0810</code>）。
       外部のインフルエンサーは <code>infl-tanaka</code> のように日付なしにすると使い回せます。<br>
       登録すると <code>{esc(base)}/r/コード</code> が使えるようになります。
     </div>

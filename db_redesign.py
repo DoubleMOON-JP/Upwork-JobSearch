@@ -8,6 +8,10 @@
 #   ※ selectors / excludes テーブルはリデザインでは未使用（削除はせず放置＝安全）
 # ─────────────────────────────────────────────────────────────
 from datetime import datetime, timezone
+import hashlib
+import hmac
+import re
+import secrets
 
 from psycopg2.extras import RealDictCursor
 
@@ -94,6 +98,30 @@ def migrate():
                 ALTER TABLE licenses ADD COLUMN IF NOT EXISTS mail_status  TEXT;
                 ALTER TABLE licenses ADD COLUMN IF NOT EXISTS mail_sent_at TIMESTAMP;
                 ALTER TABLE licenses ADD COLUMN IF NOT EXISTS mail_error   TEXT;
+
+                -- ── スタッフ（担当者マスタ）──────────────────────
+                -- 目的は2つ。
+                --   1. 紹介リンクの「担当者」の表記ゆれを防ぐ（jenny/jennifer/jenifer の混在）
+                --   2. スタッフごとにログイン情報を持たせる（共通パスワードの共有を避ける）
+                -- display_name が紹介コードに記録される値。login_id は認証用で、
+                -- 表示名とは別に持つ（表示名を変えてもログインが壊れないようにするため）。
+                -- 削除は設けない。削除すると過去の紹介コードの担当者が不明になるため、
+                -- 退職時は is_active を落として名前は残す（referrals と同じ思想）。
+                CREATE TABLE IF NOT EXISTS staff_members (
+                    id            SERIAL PRIMARY KEY,
+                    login_id      TEXT NOT NULL,
+                    display_name  TEXT NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    note          TEXT,
+                    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                -- 大文字小文字の違いだけの重複を許さない。
+                -- 「Jenn」と「jenn」が別人として並ぶと、表記ゆれ対策の意味がなくなる。
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_login
+                    ON staff_members(lower(login_id));
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_name
+                    ON staff_members(lower(display_name));
             """)
 
             # 既存データの移行（初回のみ実質的に効く）。
@@ -532,3 +560,152 @@ def _set_cap_override(license_key: str, period_month: str, cap: int) -> None:
                 """,
                 (license_key, period_month, cap, period_month),
             )
+
+
+# ── スタッフ（担当者マスタ）────────────────────────────────
+# パスワードは平文で持たない。標準ライブラリの pbkdf2 でハッシュ化して保存する。
+# 外部ライブラリを増やさない方針のため bcrypt 等は使わない。
+# 保存形式： pbkdf2_sha256$反復回数$ソルト(hex)$ハッシュ(hex)
+_PBKDF2_ITERATIONS = 200_000
+
+# ログインIDに使える文字。URLやHTTPヘッダに載るため記号を絞る。
+STAFF_LOGIN_RE = re.compile(r"^[A-Za-z0-9_-]{2,32}$")
+# 表示名は紹介コードの owner 列に入る。CSV出力もされるため、
+# カンマ・改行・引用符が混ざると集計が壊れる。
+STAFF_NAME_RE = re.compile(r"^[^\s,\"'\r\n][^,\"'\r\n]{0,31}$")
+STAFF_PASSWORD_MIN = 8
+
+
+def hash_password(password: str) -> str:
+    """パスワードをハッシュ化する。毎回ソルトが変わるため、
+    同じパスワードでも保存される文字列は毎回異なる。"""
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
+                             salt, _PBKDF2_ITERATIONS)
+    return f"pbkdf2_sha256${_PBKDF2_ITERATIONS}${salt.hex()}${dk.hex()}"
+
+
+def check_password(password: str, stored: str) -> bool:
+    """ハッシュと照合する。比較は compare_digest で行う
+    （文字列の一致箇所の長さから推測されるのを防ぐため）。"""
+    try:
+        algo, iters, salt_hex, hash_hex = (stored or "").split("$")
+        if algo != "pbkdf2_sha256":
+            return False
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
+                                 bytes.fromhex(salt_hex), int(iters))
+    except Exception:
+        return False
+    return hmac.compare_digest(dk.hex(), hash_hex)
+
+
+def list_staff(active_only: bool = False) -> list:
+    """担当者の一覧。password_hash は返さない（画面へ渡さないため）。"""
+    sql = ("SELECT id, login_id, display_name, note, is_active, created_at "
+           "FROM staff_members")
+    if active_only:
+        sql += " WHERE is_active = TRUE"
+    sql += " ORDER BY is_active DESC, display_name"
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql)
+            return [dict(r) for r in cur.fetchall()]
+
+
+def active_staff_names() -> list:
+    """紹介リンクの担当者プルダウン用。有効な担当者の表示名だけを返す。"""
+    return [s["display_name"] for s in list_staff(active_only=True)]
+
+
+def create_staff(login_id: str, display_name: str, password: str,
+                 note: str = "") -> dict:
+    login_id     = (login_id or "").strip()
+    display_name = (display_name or "").strip()
+    password     = password or ""
+
+    if not STAFF_LOGIN_RE.match(login_id):
+        return {"success": False,
+                "message": "ログインIDは英数字・ハイフン・アンダースコアの2〜32文字にしてください"}
+    if not STAFF_NAME_RE.match(display_name):
+        return {"success": False,
+                "message": "表示名は32文字以内で、カンマ・引用符・改行を含めないでください"}
+    if len(password) < STAFF_PASSWORD_MIN:
+        return {"success": False,
+                "message": f"パスワードは{STAFF_PASSWORD_MIN}文字以上にしてください"}
+
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""SELECT login_id, display_name FROM staff_members
+                            WHERE lower(login_id) = lower(%s)
+                               OR lower(display_name) = lower(%s)""",
+                        (login_id, display_name))
+            dup = cur.fetchone()
+            if dup:
+                which = ("ログインID" if dup["login_id"].lower() == login_id.lower()
+                         else "表示名")
+                return {"success": False, "message": f"その{which}は既に使われています"}
+
+            cur.execute("""INSERT INTO staff_members
+                                  (login_id, display_name, password_hash, note)
+                           VALUES (%s, %s, %s, %s) RETURNING id""",
+                        (login_id, display_name, hash_password(password),
+                         (note or "").strip() or None))
+            new_id = cur.fetchone()["id"]
+
+    return {"success": True, "id": new_id,
+            "login_id": login_id, "display_name": display_name}
+
+
+def set_staff_active(staff_id: int, active: bool) -> dict:
+    """有効／停止を切り替える。停止しても表示名は残るため、
+    過去に登録された紹介コードの担当者は追える。"""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""UPDATE staff_members SET is_active = %s
+                            WHERE id = %s
+                        RETURNING display_name, is_active""",
+                        (bool(active), int(staff_id)))
+            row = cur.fetchone()
+    if not row:
+        return {"success": False, "message": "担当者が見つかりません"}
+    return {"success": True, "display_name": row["display_name"],
+            "is_active": row["is_active"]}
+
+
+def set_staff_password(staff_id: int, password: str) -> dict:
+    """パスワードを再設定する。本人による変更手段は用意していないため、
+    忘れた場合は管理者がここから再発行する。"""
+    if len(password or "") < STAFF_PASSWORD_MIN:
+        return {"success": False,
+                "message": f"パスワードは{STAFF_PASSWORD_MIN}文字以上にしてください"}
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""UPDATE staff_members SET password_hash = %s
+                            WHERE id = %s RETURNING display_name""",
+                        (hash_password(password), int(staff_id)))
+            row = cur.fetchone()
+    if not row:
+        return {"success": False, "message": "担当者が見つかりません"}
+    return {"success": True, "display_name": row["display_name"]}
+
+
+def verify_staff(login_id: str, password: str) -> dict | None:
+    """ログイン照合。成功したら担当者の情報を返し、失敗なら None。
+    停止中の担当者はログインできない。
+
+    ※この関数は次の段階（認証の切り替え）で使う。テーブルと同時に用意しておく。"""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""SELECT id, login_id, display_name, password_hash, is_active
+                             FROM staff_members WHERE lower(login_id) = lower(%s)""",
+                        (login_id or "",))
+            row = cur.fetchone()
+    if not row or not row["is_active"]:
+        # 存在しない場合もハッシュ計算を行い、応答時間の差から
+        # 「そのIDは存在する」と分かってしまうのを防ぐ。
+        check_password(password or "", hash_password("dummy"))
+        return None
+    if not check_password(password or "", row["password_hash"]):
+        return None
+    return {"id": row["id"], "login_id": row["login_id"],
+            "display_name": row["display_name"]}
