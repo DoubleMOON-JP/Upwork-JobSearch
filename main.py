@@ -97,6 +97,193 @@ ALLOWED_FILE_COMPONENTS = {
 security = HTTPBasic()
 
 
+# ── 管理画面の表示文言（日本語／英語）────────────────────
+# スタッフは日本語話者とは限らないため、スタッフとしてログインした場合だけ
+# 英語で表示する。画面そのものは複製せず1枚のまま言語を差し替える。
+# （同じ機能の画面を2枚持つと、以後の修正が常に2箇所になるため）
+#
+# ここに入れているのは「画面に書かれている文字」だけ。
+# サーバーが返すエラー文（database.py などの戻り値）は日本語のままなので、
+# 異常時のメッセージは日本語で出る。まず画面文言だけを対象とする判断。
+UI_TEXT = {
+    "ja": {
+        "role_admin": "システム管理者", "role_staff": "スタッフ",
+        # ライセンス一覧
+        "lic_title": "ライセンス一覧", "lic_h1": "📋 ライセンス一覧",
+        "back_admin": "← 管理画面に戻る", "back_staff": "← スタッフ画面",
+        "link_referrals": "紹介リンク管理", "link_licenses": "ライセンス一覧",
+        "st_total": "総数", "st_active": "有効",
+        "st_expired": "期限切れ", "st_inactive": "無効化",
+        "badge_inactive": "無効化", "badge_expired": "期限切れ", "badge_active": "有効",
+        "kind_paid": "決済", "kind_manual": "手動",
+        "mail_sent": "送信済", "mail_failed": "未送信", "mail_manual": "手動発行",
+        "plan_legacy": "（旧）",
+        "btn_extend": "+1ヶ月", "btn_plan": "プラン変更",
+        "btn_resend": "キー再送", "btn_delete": "削除",
+        "empty_licenses": "該当するライセンスはありません",
+        "pg_prev": "← 前へ", "pg_next": "次へ →",
+        "search_h2": "🔍 検索・絞り込み", "kw_label": "キーワード",
+        "kw_ph": "ライセンスキー / メール", "status_label": "状態",
+        "opt_all": "すべて", "btn_search": "検索", "link_clear": "クリア",
+        "list_h2": "📋 一覧",
+        "th_id": "ID", "th_key": "ライセンスキー", "th_email": "メール",
+        "th_plan": "プラン", "th_kind": "種別", "th_mail": "キー送付",
+        "th_status": "状態", "th_expires": "有効期限", "th_ops": "操作",
+        "bulk_h2": "🗑 期限切れライセンスの一括削除",
+        "bulk_warn_1": "<b>削除すると元に戻せません。</b>実行前に",
+        "bulk_warn_link": "CSVバックアップ",
+        "bulk_warn_2": "を取得してください。",
+        "bulk_warn_3": ("決済に紐づくライセンスは、失効から30日経過するまで削除されません"
+                        "（支払いリトライ中に削除すると、更新時に別のキーが発行されてしまうため）。"
+                        "条件を満たさないものは自動的にスキップされます。"),
+        "bulk_since": "失効から", "btn_bulk_delete": "まとめて削除",
+        # ライセンス一覧のJS
+        "js_resend_confirm": "このライセンスキーをメールで送信しますか？",
+        "js_resend_to": "宛先: ", "js_sent": "送信しました: ",
+        "js_error": "エラー: ", "js_unknown": "不明なエラー",
+        "js_extend_confirm": " を1ヶ月延長しますか？",
+        "js_extended": "延長完了。新しい有効期限: ",
+        "js_plan_confirm_1": " のプランを「", "js_plan_confirm_2": "」に変更しますか？",
+        "js_plan_note": "・有効期限は変わりません\\n・上位プランへの変更時は、旧プランの残り回数を繰り越します",
+        "js_plan_done": "プランを変更しました：", "js_plan_keep": "有効期限は変更していません。",
+        "js_plan_carry_1": "旧プランの残り ", "js_plan_carry_2": " 回を繰り越しました。",
+        "js_plan_left_1": "今月の残り回数：", "js_plan_left_2": " 回（使用済み ",
+        "js_plan_left_3": " 回）",
+        "js_del_confirm": "このライセンスを削除しますか？",
+        "js_del_warn": "削除すると元に戻せません。",
+        "js_deleted": "削除しました：", "js_del_failed": "削除できませんでした",
+        "js_bulk_1": "失効から", "js_bulk_2": "日以上経過したライセンスをまとめて削除します。",
+        "js_bulk_3": "元に戻せません。CSVバックアップは取得済みですか？",
+        "js_bulk_final": "本当に実行しますか？（最終確認）",
+        "js_deleting": "削除中...", "js_bulk_done_1": " 件を削除しました。",
+        "js_bulk_skip_1": "（条件を満たさない ", "js_bulk_skip_2": " 件はスキップ）",
+        "js_generic_error": "エラーが発生しました",
+        # 紹介リンク管理
+        "ref_title": "紹介リンク管理", "ref_h1": "🔗 紹介リンク管理",
+        "back_admin_top": "← 管理トップ",
+        "ref_reg_h2": "コードを登録", "ref_ph_owner": "担当者（koji など）",
+        "ref_opt_channel": "種別", "ref_ph_note": "メモ（任意）",
+        "ref_btn_register": "登録",
+        "ref_hint_1": "推奨する付け方：<code>担当者-種別-日付</code>（例 <code>koji-x-0810</code>）。"
+                      " 外部のインフルエンサーは <code>infl-tanaka</code> のように日付なしにすると使い回せます。",
+        "ref_hint_2": "登録すると <code>{url}</code> が使えるようになります。",
+        "ref_stats_h2": "成績",
+        "tab_all": "全期間", "tab_this_month": "今月",
+        "tab_last_month": "先月", "tab_30d": "過去30日",
+        "rth_code": "コード", "rth_channel": "種別", "rth_owner": "担当者",
+        "rth_visits": "訪問", "rth_purchases": "購入", "rth_cvr": "転換率",
+        "rth_active": "継続中", "rth_mrr": "MRR", "rth_state": "状態",
+        "rth_note": "メモ", "rth_ops": "操作",
+        "ref_state_active": "有効", "ref_state_stopped": "停止中",
+        "ref_btn_stop": "停止", "ref_btn_resume": "再開", "ref_btn_copy": "URLコピー",
+        "ref_empty": "紹介コードがまだ登録されていません",
+        "ref_note_1": "<b>訪問・購入</b>は選択した期間内の件数。<b>継続中・MRR</b>は期間に関係なく「現時点」の値です。",
+        "ref_note_2": "ロボットと判定したアクセスは訪問数から除いています（括弧内が除外数）。",
+        "ref_note_3": "スマホで踏んでPCで購入した場合などは追跡できないため、実際の貢献はこの数字より多くなります。"
+                      " 傾向の比較には使えますが、絶対値として信用しすぎないでください。",
+        "ref_csv_h2": "CSVダウンロード",
+        "ref_csv_sum": "集計CSV（この期間）", "ref_csv_detail": "明細CSV（ライセンス1件ごと）",
+        "js_ref_need_code": "コードを入力してください",
+        "js_ref_toggle_failed": "変更できませんでした",
+        "js_ref_copied": "コピーしました: ",
+    },
+    "en": {
+        "role_admin": "Administrator", "role_staff": "Staff",
+        "lic_title": "License list", "lic_h1": "📋 License list",
+        "back_admin": "← Back to admin", "back_staff": "← Staff Console",
+        "link_referrals": "Referral links", "link_licenses": "License list",
+        "st_total": "Total", "st_active": "Active",
+        "st_expired": "Expired", "st_inactive": "Deactivated",
+        "badge_inactive": "Deactivated", "badge_expired": "Expired", "badge_active": "Active",
+        "kind_paid": "Paid", "kind_manual": "Manual",
+        "mail_sent": "Sent", "mail_failed": "Not sent", "mail_manual": "Issued manually",
+        "plan_legacy": " (legacy)",
+        "btn_extend": "+1 month", "btn_plan": "Change plan",
+        "btn_resend": "Resend key", "btn_delete": "Delete",
+        "empty_licenses": "No licenses match your search",
+        "pg_prev": "← Prev", "pg_next": "Next →",
+        "search_h2": "🔍 Search", "kw_label": "Keyword",
+        "kw_ph": "license key / email", "status_label": "Status",
+        "opt_all": "All", "btn_search": "Search", "link_clear": "Clear",
+        "list_h2": "📋 Licenses",
+        "th_id": "ID", "th_key": "License key", "th_email": "Email",
+        "th_plan": "Plan", "th_kind": "Source", "th_mail": "Key delivery",
+        "th_status": "Status", "th_expires": "Expires", "th_ops": "Actions",
+        "bulk_h2": "🗑 Bulk delete expired licenses",
+        "bulk_warn_1": "<b>This cannot be undone.</b> Before you run it, download a",
+        "bulk_warn_link": "CSV backup",
+        "bulk_warn_2": ".",
+        "bulk_warn_3": ("Licenses tied to a payment are kept for 30 days after they expire "
+                        "(deleting one mid-retry would issue a different key on renewal). "
+                        "Anything that doesn't qualify is skipped automatically."),
+        "bulk_since": "Expired for", "btn_bulk_delete": "Delete them",
+        "js_resend_confirm": "Email this license key?",
+        "js_resend_to": "To: ", "js_sent": "Sent to: ",
+        "js_error": "Error: ", "js_unknown": "Unknown error",
+        "js_extend_confirm": " — extend by one month?",
+        "js_extended": "Extended. New expiry date: ",
+        "js_plan_confirm_1": " — change the plan to ", "js_plan_confirm_2": "?",
+        "js_plan_note": "- The expiry date stays the same\\n- Unused evaluations carry over when moving to a higher plan",
+        "js_plan_done": "Plan changed: ", "js_plan_keep": "The expiry date was not changed.",
+        "js_plan_carry_1": "Carried over ", "js_plan_carry_2": " evaluations from the old plan.",
+        "js_plan_left_1": "Remaining this month: ", "js_plan_left_2": " (used ",
+        "js_plan_left_3": ")",
+        "js_del_confirm": "Delete this license?",
+        "js_del_warn": "This cannot be undone.",
+        "js_deleted": "Deleted: ", "js_del_failed": "Could not delete",
+        "js_bulk_1": "Delete every license that expired more than ", "js_bulk_2": " days ago.",
+        "js_bulk_3": "This cannot be undone. Have you downloaded the CSV backup?",
+        "js_bulk_final": "Run it now? (final confirmation)",
+        "js_deleting": "Deleting...", "js_bulk_done_1": " deleted.",
+        "js_bulk_skip_1": " (", "js_bulk_skip_2": " skipped — they did not qualify)",
+        "js_generic_error": "Something went wrong",
+        "ref_title": "Referral links", "ref_h1": "🔗 Referral links",
+        "back_admin_top": "← Admin home",
+        "ref_reg_h2": "Add a code", "ref_ph_owner": "owner (e.g. koji)",
+        "ref_opt_channel": "Channel", "ref_ph_note": "note (optional)",
+        "ref_btn_register": "Add",
+        "ref_hint_1": "Suggested format: <code>owner-channel-date</code> (e.g. <code>koji-x-0810</code>)."
+                      " For outside influencers, drop the date — <code>infl-tanaka</code> — so the code can be reused.",
+        "ref_hint_2": "Once added, <code>{url}</code> becomes available.",
+        "ref_stats_h2": "Results",
+        "tab_all": "All time", "tab_this_month": "This month",
+        "tab_last_month": "Last month", "tab_30d": "Last 30 days",
+        "rth_code": "Code", "rth_channel": "Channel", "rth_owner": "Owner",
+        "rth_visits": "Visits", "rth_purchases": "Purchases", "rth_cvr": "Conv.",
+        "rth_active": "Still active", "rth_mrr": "MRR", "rth_state": "State",
+        "rth_note": "Note", "rth_ops": "Actions",
+        "ref_state_active": "Active", "ref_state_stopped": "Stopped",
+        "ref_btn_stop": "Stop", "ref_btn_resume": "Resume", "ref_btn_copy": "Copy URL",
+        "ref_empty": "No referral codes yet",
+        "ref_note_1": "<b>Visits and purchases</b> cover the period you picked."
+                      " <b>Still active and MRR</b> are current figures, whatever period is selected.",
+        "ref_note_2": "Traffic identified as bots is excluded from the visit count (the number in brackets).",
+        "ref_note_3": "A visit on a phone followed by a purchase on a laptop can't be tracked, so the real"
+                      " contribution is higher than what you see. Use these numbers to compare trends,"
+                      " not as exact totals.",
+        "ref_csv_h2": "Download CSV",
+        "ref_csv_sum": "Summary (selected period)", "ref_csv_detail": "Detail (one row per license)",
+        "js_ref_need_code": "Please enter a code.",
+        "js_ref_toggle_failed": "Could not change it.",
+        "js_ref_copied": "Copied: ",
+    },
+}
+
+
+def ui_text(who: dict) -> dict:
+    """ログインしている人に合わせて画面文言の辞書を返す。"""
+    return UI_TEXT["ja"] if who.get("role") == "admin" else UI_TEXT["en"]
+
+
+def plan_label_ui(info: dict, en: bool) -> str:
+    """プラン名を画面に出す形にする。英語では PLANS の label（日本語）から
+    名称部分だけを取り出し、回数を英語で添える。プランが増えても
+    ここを直さずに済むよう、定義から組み立てる。"""
+    if not en:
+        return info["label"]
+    return f'{info["label"].split("（")[0]} ({info["monthly_cap"]}/month)'
+
+
 def esc(v) -> str:
     """管理画面HTMLへ値を埋め込む際のエスケープ（属性値・テキスト共用）。"""
     return (
@@ -1194,14 +1381,18 @@ async def admin_licenses_page(
 
     # 誰としてログインしているかを常に見せる。Basic認証はログアウトできないため、
     # 意図しない資格情報のまま操作してしまう事故を防ぐ目的。
-    _role_ja = "システム管理者" if who.get("role") == "admin" else "スタッフ"
+    T  = ui_text(who)
+    EN = who.get("role") != "admin"
+    _role = T["role_admin"] if who.get("role") == "admin" else T["role_staff"]
     who_badge = (f'<span style="opacity:.8">{esc(who.get("display_name") or "")}'
-                 f'（{_role_ja}）</span>')
+                 f'（{_role}）</span>' if not EN else
+                 f'<span style="opacity:.8">{esc(who.get("display_name") or "")}'
+                 f' ({_role})</span>')
     # スタッフの戻り先はスタッフ用トップ。管理者には管理トップを出す。
-    back_link = ('<a href="/admin" style="margin-left:14px">← 管理画面に戻る</a>'
-                 if who.get("role") == "admin"
-                 else '<a href="/staff" style="margin-left:14px">← Staff Console</a>'
-                      '<a href="/admin/referrals" style="margin-left:14px">Referral links</a>')
+    back_link = (f'<a href="/admin" style="margin-left:14px">{T["back_admin"]}</a>'
+                 if not EN
+                 else f'<a href="/staff" style="margin-left:14px">{T["back_staff"]}</a>'
+                      f'<a href="/admin/referrals" style="margin-left:14px">{T["link_referrals"]}</a>')
     found = search_licenses(keyword=q.strip(), status=status,
                             limit=LICENSES_PER_PAGE, offset=offset)
     licenses, total = found["rows"], found["total"]
@@ -1213,33 +1404,35 @@ async def admin_licenses_page(
     for lic in licenses:
         expired = lic["expires_at"] < today
         if lic["status"] != "active":
-            badge = '<span style="color:#843C0C">無効化</span>'
+            badge = f'<span style="color:#843C0C">{T["badge_inactive"]}</span>'
         elif expired:
-            badge = '<span style="color:#843C0C">期限切れ</span>'
+            badge = f'<span style="color:#843C0C">{T["badge_expired"]}</span>'
         else:
-            badge = '<span style="color:#375623">有効</span>'
+            badge = f'<span style="color:#375623">{T["badge_active"]}</span>'
 
         current_plan = lic["plan"]
         opts = "".join(
             f'<option value="{esc(code)}"'
-            f'{" selected" if code == current_plan else ""}>{esc(info["label"])}</option>'
+            f'{" selected" if code == current_plan else ""}>'
+            f'{esc(plan_label_ui(info, EN))}</option>'
             for code, info in PLANS.items()
         )
         if not is_valid_plan(current_plan):
-            opts = f'<option value="{esc(current_plan)}" selected>{esc(current_plan)}（旧）</option>' + opts
+            opts = (f'<option value="{esc(current_plan)}" selected>'
+                    f'{esc(current_plan)}{T["plan_legacy"]}</option>') + opts
 
-        paid = "決済" if lic.get("subscription_id") else "手動"
+        paid = T["kind_paid"] if lic.get("subscription_id") else T["kind_manual"]
 
         # メール送付の状態。failed だけを目立たせる（要手動対応のため）。
         ms = lic.get("mail_status")
         if ms == "sent":
-            mail_badge = '<span style="color:#375623">送信済</span>'
+            mail_badge = f'<span style="color:#375623">{T["mail_sent"]}</span>'
         elif ms == "failed":
             mail_badge = ('<span style="background:#FCE4D6;color:#843C0C;'
                           'font-weight:bold;padding:2px 6px;border-radius:3px">'
-                          '未送信</span>')
+                          f'{T["mail_failed"]}</span>')
         elif ms == "manual":
-            mail_badge = '<span style="color:#777">手動発行</span>'
+            mail_badge = f'<span style="color:#777">{T["mail_manual"]}</span>'
         else:
             # この機能を入れる前に発行された分。送れているかは分からない。
             mail_badge = '<span style="color:#BBB">—</span>'
@@ -1255,18 +1448,19 @@ async def admin_licenses_page(
           <td>{lic['expires_at']}</td>
           <td style="white-space:nowrap">
             <button onclick="extend('{esc(lic['license_key'])}')"
-              style="font-size:11px;padding:3px 7px;cursor:pointer">+1ヶ月</button>
+              style="font-size:11px;padding:3px 7px;cursor:pointer">{T['btn_extend']}</button>
             <button onclick="changePlan('{esc(lic['license_key'])}', {lic['id']})"
-              style="font-size:11px;padding:3px 7px;cursor:pointer">プラン変更</button>
+              style="font-size:11px;padding:3px 7px;cursor:pointer">{T['btn_plan']}</button>
             <button onclick="resendKey('{esc(lic['license_key'])}', '{esc(lic['email'])}')"
-              style="font-size:11px;padding:3px 7px;cursor:pointer">キー再送</button>
+              style="font-size:11px;padding:3px 7px;cursor:pointer">{T['btn_resend']}</button>
             <button onclick="delLicense('{esc(lic['license_key'])}', '{esc(lic['email'])}')"
-              style="font-size:11px;padding:3px 7px;cursor:pointer;color:#843C0C">削除</button>
+              style="font-size:11px;padding:3px 7px;cursor:pointer;color:#843C0C">{T['btn_delete']}</button>
           </td>
         </tr>"""
 
     if not rows:
-        rows = '<tr><td colspan="9" style="text-align:center;color:#999;padding:24px">該当するライセンスはありません</td></tr>'
+        rows = ('<tr><td colspan="9" style="text-align:center;color:#999;padding:24px">'
+                f'{T["empty_licenses"]}</td></tr>')
 
     def sel(v):
         return " selected" if status == v else ""
@@ -1276,18 +1470,28 @@ async def admin_licenses_page(
                 f'style="padding:5px 10px;border:1px solid #BFCFDF;border-radius:4px;'
                 f'text-decoration:none;color:#2E75B6;font-size:12px">{label}</a>')
 
+    # 一括削除の日数選択。日本語と英語で語順が違うため、まとめて組み立てる。
+    day_options = "".join(
+        f'<option value="{d}"{" selected" if d == 90 else ""}>'
+        + (f'{d}日以上経過' if not EN else f'{d}+ days')
+        + '</option>'
+        for d in (30, 60, 90, 180)
+    )
+
     pager = ""
     if page > 1:
-        pager += page_link(page - 1, "← 前へ") + " "
-    pager += f'<span style="font-size:12px;color:#777">{page} / {last_page} ページ（全{total}件）</span>'
+        pager += page_link(page - 1, T["pg_prev"]) + " "
+    _pg = (f'{page} / {last_page} ページ（全{total}件）' if not EN
+           else f'Page {page} of {last_page} ({total} total)')
+    pager += f'<span style="font-size:12px;color:#777">{_pg}</span>'
     if page < last_page:
-        pager += " " + page_link(page + 1, "次へ →")
+        pager += " " + page_link(page + 1, T["pg_next"])
 
     html = f"""<!DOCTYPE html>
-<html lang="ja">
+<html lang="{'en' if EN else 'ja'}">
 <head>
   <meta charset="UTF-8">
-  <title>ライセンス一覧 - JobSearch</title>
+  <title>{T['lic_title']} - JobSearch</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: Arial, sans-serif; background: #F5F7FA; color: #1A1A1A; font-size: 13px; }}
@@ -1323,7 +1527,7 @@ async def admin_licenses_page(
 </head>
 <body>
 <div class="header">
-  <h1>📋 ライセンス一覧</h1>
+  <h1>{T['lic_h1']}</h1>
   <span style="font-size:12px">{who_badge}{back_link}</span>
 </div>
 
@@ -1331,36 +1535,38 @@ async def admin_licenses_page(
 
   <div class="card">
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-num">{stats['total']}</div><div class="stat-label">総数</div></div>
-      <div class="stat-card"><div class="stat-num" style="color:#1F7A4D">{stats['active']}</div><div class="stat-label">有効</div></div>
-      <div class="stat-card"><div class="stat-num" style="color:#843C0C">{stats['expired']}</div><div class="stat-label">期限切れ</div></div>
-      <div class="stat-card"><div class="stat-num">{stats['inactive']}</div><div class="stat-label">無効化</div></div>
+      <div class="stat-card"><div class="stat-num">{stats['total']}</div><div class="stat-label">{T['st_total']}</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#1F7A4D">{stats['active']}</div><div class="stat-label">{T['st_active']}</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#843C0C">{stats['expired']}</div><div class="stat-label">{T['st_expired']}</div></div>
+      <div class="stat-card"><div class="stat-num">{stats['inactive']}</div><div class="stat-label">{T['st_inactive']}</div></div>
     </div>
   </div>
 
   <div class="card">
-    <h2>🔍 検索・絞り込み</h2>
+    <h2>{T['search_h2']}</h2>
     <form method="get" action="/admin/licenses" class="form-row">
-      <label>キーワード</label>
-      <input type="text" name="q" value="{esc(q)}" placeholder="ライセンスキー / メール" style="min-width:240px">
-      <label>状態</label>
+      <label>{T['kw_label']}</label>
+      <input type="text" name="q" value="{esc(q)}" placeholder="{T['kw_ph']}" style="min-width:240px">
+      <label>{T['status_label']}</label>
       <select name="status">
-        <option value="all"{sel('all')}>すべて</option>
-        <option value="active"{sel('active')}>有効</option>
-        <option value="expired"{sel('expired')}>期限切れ</option>
-        <option value="inactive"{sel('inactive')}>無効化</option>
+        <option value="all"{sel('all')}>{T['opt_all']}</option>
+        <option value="active"{sel('active')}>{T['badge_active']}</option>
+        <option value="expired"{sel('expired')}>{T['badge_expired']}</option>
+        <option value="inactive"{sel('inactive')}>{T['badge_inactive']}</option>
       </select>
-      <button type="submit" class="btn btn-blue">検索</button>
-      <a href="/admin/licenses" style="font-size:12px;color:#777">クリア</a>
+      <button type="submit" class="btn btn-blue">{T['btn_search']}</button>
+      <a href="/admin/licenses" style="font-size:12px;color:#777">{T['link_clear']}</a>
     </form>
   </div>
 
   <div class="card">
-    <h2>📋 一覧</h2>
+    <h2>{T['list_h2']}</h2>
     <table>
       <thead>
-        <tr><th>ID</th><th>ライセンスキー</th><th>メール</th><th>プラン</th><th>種別</th>
-            <th>キー送付</th><th>状態</th><th>有効期限</th><th>操作</th></tr>
+        <tr><th>{T['th_id']}</th><th>{T['th_key']}</th><th>{T['th_email']}</th>
+            <th>{T['th_plan']}</th><th>{T['th_kind']}</th>
+            <th>{T['th_mail']}</th><th>{T['th_status']}</th>
+            <th>{T['th_expires']}</th><th>{T['th_ops']}</th></tr>
       </thead>
       <tbody>{rows}</tbody>
     </table>
@@ -1368,23 +1574,16 @@ async def admin_licenses_page(
   </div>
 
   <div class="card">
-    <h2>🗑 期限切れライセンスの一括削除</h2>
+    <h2>{T['bulk_h2']}</h2>
     <div class="warn">
-      <b>削除すると元に戻せません。</b>実行前に
-      <a href="/admin/backup" style="color:#2E75B6">CSVバックアップ</a> を取得してください。<br>
-      決済に紐づくライセンスは、失効から30日経過するまで削除されません
-      （支払いリトライ中に削除すると、更新時に別のキーが発行されてしまうため）。
-      条件を満たさないものは自動的にスキップされます。
+      {T['bulk_warn_1']}
+      <a href="/admin/backup" style="color:#2E75B6">{T['bulk_warn_link']}</a>{T['bulk_warn_2']}<br>
+      {T['bulk_warn_3']}
     </div>
     <div class="form-row">
-      <label>失効から</label>
-      <select id="del-days">
-        <option value="30">30日以上経過</option>
-        <option value="60">60日以上経過</option>
-        <option value="90" selected>90日以上経過</option>
-        <option value="180">180日以上経過</option>
-      </select>
-      <button class="btn btn-danger" onclick="delExpired()">まとめて削除</button>
+      <label>{T['bulk_since']}</label>
+      <select id="del-days">{day_options}</select>
+      <button class="btn btn-danger" onclick="delExpired()">{T['btn_bulk_delete']}</button>
     </div>
     <div id="del-msg" style="margin-top:10px;font-size:12px"></div>
   </div>
@@ -1393,35 +1592,35 @@ async def admin_licenses_page(
 
 <script>
 async function resendKey(key, email) {{
-  if (!confirm('このライセンスキーをメールで送信しますか？\\n\\n'
-               + key + '\\n宛先: ' + email)) return;
+  if (!confirm('{T['js_resend_confirm']}\\n\\n'
+               + key + '\\n{T['js_resend_to']}' + email)) return;
   const res = await fetch('/admin/license/resend', {{
     method: 'POST', headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{license_key: key}}),
   }});
   const data = await res.json();
   if (res.ok && data.success) {{
-    alert('送信しました: ' + data.email);
+    alert('{T['js_sent']}' + data.email);
     location.reload();
   }} else {{
-    alert('エラー: ' + (data.message || '不明なエラー'));
+    alert('{T['js_error']}' + (data.message || '{T['js_unknown']}'));
   }}
 }}
 
 async function extend(key) {{
-  if (!confirm(key + ' を1ヶ月延長しますか？')) return;
+  if (!confirm(key + '{T['js_extend_confirm']}')) return;
   const res = await fetch('/admin/license/extend', {{
     method: 'POST', headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{license_key: key, months: 1}}),
   }});
   const data = await res.json();
-  if (res.ok) {{ alert('延長完了。新しい有効期限: ' + data.new_expires_at); location.reload(); }}
-  else {{ alert('エラー: ' + (data.message || '不明なエラー')); }}
+  if (res.ok) {{ alert('{T['js_extended']}' + data.new_expires_at); location.reload(); }}
+  else {{ alert('{T['js_error']}' + (data.message || '{T['js_unknown']}')); }}
 }}
 
 async function changePlan(key, id) {{
   const plan = document.getElementById('plan-' + id).value;
-  if (!confirm(key + ' のプランを「' + plan + '」に変更しますか？\\n\\n・有効期限は変わりません\\n・上位プランへの変更時は、旧プランの残り回数を繰り越します')) {{
+  if (!confirm(key + '{T['js_plan_confirm_1']}' + plan + '{T['js_plan_confirm_2']}\\n\\n{T['js_plan_note']}')) {{
     location.reload(); return;
   }}
   const res = await fetch('/admin/license/plan', {{
@@ -1430,44 +1629,44 @@ async function changePlan(key, id) {{
   }});
   const data = await res.json();
   if (res.ok && data.success) {{
-    let msg = 'プランを変更しました：' + data.old_plan + ' → ' + data.new_plan;
-    msg += '\\n有効期限は変更していません。';
-    if (data.carried_over > 0) {{ msg += '\\n\\n旧プランの残り ' + data.carried_over + ' 回を繰り越しました。'; }}
-    if (data.remaining != null) {{ msg += '\\n今月の残り回数：' + data.remaining + ' 回（使用済み ' + data.used + ' 回）'; }}
+    let msg = '{T['js_plan_done']}' + data.old_plan + ' → ' + data.new_plan;
+    msg += '\\n{T['js_plan_keep']}';
+    if (data.carried_over > 0) {{ msg += '\\n\\n{T['js_plan_carry_1']}' + data.carried_over + '{T['js_plan_carry_2']}'; }}
+    if (data.remaining != null) {{ msg += '\\n{T['js_plan_left_1']}' + data.remaining + '{T['js_plan_left_2']}' + data.used + '{T['js_plan_left_3']}'; }}
     alert(msg);
-  }} else {{ alert('エラー: ' + (data.message || '不明なエラー')); }}
+  }} else {{ alert('{T['js_error']}' + (data.message || '{T['js_unknown']}')); }}
   location.reload();
 }}
 
 async function delLicense(key, email) {{
-  if (!confirm('このライセンスを削除しますか？\\n\\n' + key + '\\n' + email +
-               '\\n\\n削除すると元に戻せません。')) return;
+  if (!confirm('{T['js_del_confirm']}\\n\\n' + key + '\\n' + email +
+               '\\n\\n{T['js_del_warn']}')) return;
   const res = await fetch('/admin/license/delete', {{
     method: 'POST', headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{license_key: key}}),
   }});
   const data = await res.json();
-  if (res.ok && data.success) {{ alert('削除しました：' + key); location.reload(); }}
-  else {{ alert('削除できませんでした\\n\\n' + (data.message || '不明なエラー')); }}
+  if (res.ok && data.success) {{ alert('{T['js_deleted']}' + key); location.reload(); }}
+  else {{ alert('{T['js_del_failed']}\\n\\n' + (data.message || '{T['js_unknown']}')); }}
 }}
 
 async function delExpired() {{
   const days = document.getElementById('del-days').value;
-  if (!confirm('失効から' + days + '日以上経過したライセンスをまとめて削除します。\\n\\n' +
-               '元に戻せません。CSVバックアップは取得済みですか？')) return;
-  if (!confirm('本当に実行しますか？（最終確認）')) return;
+  if (!confirm('{T['js_bulk_1']}' + days + '{T['js_bulk_2']}\\n\\n' +
+               '{T['js_bulk_3']}')) return;
+  if (!confirm('{T['js_bulk_final']}')) return;
   const msg = document.getElementById('del-msg');
-  msg.textContent = '削除中...';
+  msg.textContent = '{T['js_deleting']}';
   const res = await fetch('/admin/license/delete-expired', {{
     method: 'POST', headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{days: parseInt(days, 10)}}),
   }});
   const data = await res.json();
   if (res.ok && data.success) {{
-    msg.innerHTML = '✅ ' + data.deleted_count + ' 件を削除しました。' +
-      (data.skipped_count ? '（条件を満たさない ' + data.skipped_count + ' 件はスキップ）' : '');
+    msg.innerHTML = '✅ ' + data.deleted_count + '{T['js_bulk_done_1']}' +
+      (data.skipped_count ? '{T['js_bulk_skip_1']}' + data.skipped_count + '{T['js_bulk_skip_2']}' : '');
     setTimeout(() => location.reload(), 2000);
-  }} else {{ msg.textContent = '❌ ' + (data.message || 'エラーが発生しました'); }}
+  }} else {{ msg.textContent = '❌ ' + (data.message || '{T['js_generic_error']}'); }}
 }}
 </script>
 </body>
@@ -1685,12 +1884,14 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify_any)):
         stats = []
 
     base = (BASE_URL or "").rstrip("/")
+    T  = ui_text(who)
+    EN = who.get("role") != "admin"
 
     # スタッフには管理トップへのリンクを出さない。
     # 押しても403になるだけで、権限がないことを分かりにくくするため。
-    top_link = ('<a href="/admin" style="color:#2E75B6">← 管理トップ</a>'
-                if who.get("role") == "admin"
-                else '<a href="/staff" style="color:#2E75B6">← Staff Console</a>')
+    top_link = (f'<a href="/admin" style="color:#2E75B6">{T["back_admin_top"]}</a>'
+                if not EN
+                else f'<a href="/staff" style="color:#2E75B6">{T["back_staff"]}</a>')
 
     rows = ""
     for st in stats:
@@ -1704,14 +1905,16 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify_any)):
         url = f"{base}/r/{code}"
 
         if st["is_active"]:
-            state = '<span style="color:#375623">有効</span>'
+            state = f'<span style="color:#375623">{T["ref_state_active"]}</span>'
             btn = (f'<button onclick="toggleRef(\'{esc(code)}\', false)" '
-                   f'style="font-size:11px;padding:3px 7px;cursor:pointer">停止</button>')
+                   f'style="font-size:11px;padding:3px 7px;cursor:pointer">'
+                   f'{T["ref_btn_stop"]}</button>')
             row_style = ""
         else:
-            state = '<span style="color:#999">停止中</span>'
+            state = f'<span style="color:#999">{T["ref_state_stopped"]}</span>'
             btn = (f'<button onclick="toggleRef(\'{esc(code)}\', true)" '
-                   f'style="font-size:11px;padding:3px 7px;cursor:pointer">再開</button>')
+                   f'style="font-size:11px;padding:3px 7px;cursor:pointer">'
+                   f'{T["ref_btn_resume"]}</button>')
             row_style = ' style="opacity:.55"'
 
         bot_note = (f'<span style="color:#BBB;font-size:10px"> (+bot {bots})</span>'
@@ -1731,14 +1934,14 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify_any)):
           <td style="font-size:11px;color:#777">{esc(st.get('note') or '')}</td>
           <td>
             <button onclick="copyUrl('{esc(url)}')"
-              style="font-size:11px;padding:3px 7px;cursor:pointer">URLコピー</button>
+              style="font-size:11px;padding:3px 7px;cursor:pointer">{T['ref_btn_copy']}</button>
             {btn}
           </td>
         </tr>"""
 
     if not rows:
         rows = ('<tr><td colspan="11" style="text-align:center;color:#999;padding:24px">'
-                '紹介コードがまだ登録されていません</td></tr>')
+                f'{T["ref_empty"]}</td></tr>')
 
     def tab(key, label):
         on = (period == key)
@@ -1748,13 +1951,18 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify_any)):
                 f'style="{style};padding:5px 12px;border-radius:4px;'
                 f'text-decoration:none;font-size:12px;margin-right:6px">{label}</a>')
 
-    tabs = (tab("all", "全期間") + tab("this_month", "今月")
-            + tab("last_month", "先月") + tab("30d", "過去30日"))
+    # ヒント文は URL を差し込む必要があるため、ここで組み立てておく。
+    # （HTML側のf-string内では二重の波括弧処理が入り読みにくくなるため）
+    _sample_url = f'{esc(base)}/r/' + ('コード' if not EN else 'CODE')
+    ref_hint_2 = T["ref_hint_2"].replace("{url}", _sample_url)
+
+    tabs = (tab("all", T["tab_all"]) + tab("this_month", T["tab_this_month"])
+            + tab("last_month", T["tab_last_month"]) + tab("30d", T["tab_30d"]))
 
     html = f"""<!DOCTYPE html>
-<html lang="ja"><head><meta charset="utf-8" />
+<html lang="{'en' if EN else 'ja'}"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>紹介リンク管理 - JobSearch</title>
+<title>{T['ref_title']} - JobSearch</title>
 <style>
 * {{ box-sizing: border-box; }}
 body {{ font-family: "Segoe UI", "Hiragino Sans", sans-serif; background: #F0F4F8;
@@ -1779,58 +1987,59 @@ a.dl {{ color: #2E75B6; font-size: 12px; margin-right: 18px; }}
   margin-top: 10px; }}
 </style></head><body>
 <div class="container">
-  <h1>🔗 紹介リンク管理</h1>
+  <h1>{T['ref_h1']}</h1>
   <p style="font-size:12px;margin:-8px 0 18px">
     {top_link}
-    <a href="/admin/licenses" style="color:#2E75B6;margin-left:14px">ライセンス一覧</a>
+    <a href="/admin/licenses" style="color:#2E75B6;margin-left:14px">{T['link_licenses']}</a>
   </p>
 
   <div class="card">
-    <h2>コードを登録</h2>
+    <h2>{T['ref_reg_h2']}</h2>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
       <input id="r-code" placeholder="koji-x-0810" style="width:190px" />
       <select id="r-channel">
-        <option value="">種別</option>
+        <option value="">{T['ref_opt_channel']}</option>
         <option>X</option><option>LinkedIn</option><option>Reddit</option>
         <option>Facebook</option><option>YouTube</option><option>Blog</option>
         <option>Email</option><option>Other</option>
       </select>
-      <input id="r-owner" placeholder="担当者（koji など）" style="width:190px" />
-      <input id="r-note" placeholder="メモ（任意）" style="width:250px" />
-      <button class="btn" onclick="addRef()">登録</button>
+      <input id="r-owner" placeholder="{T['ref_ph_owner']}" style="width:190px" />
+      <input id="r-note" placeholder="{T['ref_ph_note']}" style="width:250px" />
+      <button class="btn" onclick="addRef()">{T['ref_btn_register']}</button>
     </div>
     <div id="r-msg" class="msg"></div>
     <div class="hint">
-      推奨する付け方：<code>担当者-種別-日付</code>（例 <code>koji-x-0810</code>）。
-      外部のインフルエンサーは <code>infl-tanaka</code> のように日付なしにすると使い回せます。<br>
-      登録すると <code>{esc(base)}/r/コード</code> が使えるようになります。
+      {T['ref_hint_1']}<br>
+      {ref_hint_2}
     </div>
   </div>
 
   <div class="card">
-    <h2>成績</h2>
+    <h2>{T['ref_stats_h2']}</h2>
     <div style="margin-bottom:12px">{tabs}</div>
     <table>
       <thead>
-        <tr><th>コード</th><th>種別</th><th>担当者</th><th style="text-align:right">訪問</th>
-            <th style="text-align:right">購入</th><th style="text-align:right">転換率</th>
-            <th style="text-align:right">継続中</th><th style="text-align:right">MRR</th>
-            <th>状態</th><th>メモ</th><th>操作</th></tr>
+        <tr><th>{T['rth_code']}</th><th>{T['rth_channel']}</th><th>{T['rth_owner']}</th>
+            <th style="text-align:right">{T['rth_visits']}</th>
+            <th style="text-align:right">{T['rth_purchases']}</th>
+            <th style="text-align:right">{T['rth_cvr']}</th>
+            <th style="text-align:right">{T['rth_active']}</th>
+            <th style="text-align:right">{T['rth_mrr']}</th>
+            <th>{T['rth_state']}</th><th>{T['rth_note']}</th><th>{T['rth_ops']}</th></tr>
       </thead>
       <tbody>{rows}</tbody>
     </table>
     <div class="hint">
-      <b>訪問・購入</b>は選択した期間内の件数。<b>継続中・MRR</b>は期間に関係なく「現時点」の値です。<br>
-      ロボットと判定したアクセスは訪問数から除いています（括弧内が除外数）。<br>
-      スマホで踏んでPCで購入した場合などは追跡できないため、実際の貢献はこの数字より多くなります。
-      傾向の比較には使えますが、絶対値として信用しすぎないでください。
+      {T['ref_note_1']}<br>
+      {T['ref_note_2']}<br>
+      {T['ref_note_3']}
     </div>
   </div>
 
   <div class="card">
-    <h2>CSVダウンロード</h2>
-    <a class="dl" href="/admin/referrals/csv?period={period}">集計CSV（この期間）</a>
-    <a class="dl" href="/admin/referrals/csv/detail">明細CSV（ライセンス1件ごと）</a>
+    <h2>{T['ref_csv_h2']}</h2>
+    <a class="dl" href="/admin/referrals/csv?period={period}">{T['ref_csv_sum']}</a>
+    <a class="dl" href="/admin/referrals/csv/detail">{T['ref_csv_detail']}</a>
   </div>
 </div>
 <script>
@@ -1845,7 +2054,7 @@ function show(msg, ok) {{
 
 async function addRef() {{
   const code = document.getElementById('r-code').value.trim();
-  if (!code) {{ show('コードを入力してください', false); return; }}
+  if (!code) {{ show('{T['js_ref_need_code']}', false); return; }}
   const res = await fetch('/admin/referral/create', {{
     method: 'POST', headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{
@@ -1857,7 +2066,7 @@ async function addRef() {{
   }});
   const data = await res.json();
   if (res.ok && data.success) {{ location.reload(); }}
-  else {{ show('エラー: ' + (data.message || '不明なエラー'), false); }}
+  else {{ show('{T['js_error']}' + (data.message || '{T['js_unknown']}'), false); }}
 }}
 
 async function toggleRef(code, active) {{
@@ -1866,13 +2075,13 @@ async function toggleRef(code, active) {{
     body: JSON.stringify({{code: code, active: active}}),
   }});
   if (res.ok) {{ location.reload(); }}
-  else {{ alert('変更できませんでした'); }}
+  else {{ alert('{T['js_ref_toggle_failed']}'); }}
 }}
 
 function copyUrl(url) {{
   if (navigator.clipboard && navigator.clipboard.writeText) {{
     navigator.clipboard.writeText(url).then(function () {{
-      show('コピーしました: ' + url, true);
+      show('{T['js_ref_copied']}' + url, true);
     }}, function () {{ show(url, true); }});
   }} else {{
     show(url, true);
