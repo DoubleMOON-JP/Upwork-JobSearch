@@ -45,6 +45,7 @@ from db_redesign import (                                  # DBマイグレー�
     list_referrals, create_referral, set_referral_active,
     referral_stats, referral_detail_rows,
     list_staff, create_staff, set_staff_active, set_staff_password,  # 担当者マスタ
+    verify_staff,                                          # スタッフのログイン照合
 )
 from plans import (                                      # プラン定義（単一情報源）
     PLANS, plan_label, is_valid_plan, plan_price_usd,
@@ -105,15 +106,65 @@ def esc(v) -> str:
     )
 
 
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    ok_user = sec_module.compare_digest(credentials.username, ADMIN_USER)
-    ok_pass = sec_module.compare_digest(credentials.password, ADMIN_PASSWORD)
-    if not (ok_user and ok_pass):
+def _identify(credentials: HTTPBasicCredentials) -> dict | None:
+    """Basic認証の資格情報から「誰か」を判定する。判定できなければ None。
+
+    管理者は環境変数、スタッフは staff_members テーブルと照合する。
+    フォーム認証やセッションは導入していない（画面もCookieも不要で、
+    既存の全ルートを書き換えずに済むため）。その代わりログアウトはできない。
+    """
+    try:
+        ok_user = sec_module.compare_digest(credentials.username, ADMIN_USER)
+        ok_pass = sec_module.compare_digest(credentials.password, ADMIN_PASSWORD)
+    except TypeError:
+        # compare_digest は非ASCIIの str を受け付けない。
+        # 管理者IDは英数字なので、この時点で管理者ではないと判断してよい。
+        ok_user = ok_pass = False
+    if ok_user and ok_pass:
+        return {"role": "admin", "login_id": credentials.username,
+                "display_name": credentials.username}
+
+    staff = verify_staff(credentials.username, credentials.password)
+    if staff:
+        return {"role": "staff", **staff}
+    return None
+
+
+def _unauthorized():
+    raise HTTPException(
+        status_code=401, detail="認証失敗",
+        headers={"WWW-Authenticate": "Basic"},
+    )
+
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)) -> str:
+    """システム管理者だけが通れる。スタッフの資格情報では 403 で弾く。
+
+    401 ではなく 403 を返すのは、401 だとブラウザが再度パスワードを尋ね、
+    スタッフが何度入れ直しても入れない状態になるため。403 なら
+    「権限がない」ことが本人に伝わる。
+    """
+    who = _identify(credentials)
+    if not who:
+        _unauthorized()
+    if who["role"] != "admin":
         raise HTTPException(
-            status_code=401, detail="認証失敗",
-            headers={"WWW-Authenticate": "Basic"},
+            status_code=403,
+            detail="この画面はシステム管理者のみ利用できます",
         )
-    return credentials.username
+    return who["login_id"]
+
+
+def verify_any(credentials: HTTPBasicCredentials = Depends(security)) -> dict:
+    """管理者・スタッフのどちらでも通れる。誰であるかを dict で返す。
+
+    返り値の role / display_name を使って、画面の表示内容や
+    紹介リンクの担当者を切り替える。
+    """
+    who = _identify(credentials)
+    if not who:
+        _unauthorized()
+    return who
 
 
 # ══════════════════════════════════════════
@@ -977,10 +1028,19 @@ LICENSES_PER_PAGE = 50
 @app.get("/admin/licenses", response_class=HTMLResponse)
 async def admin_licenses_page(
     q: str = "", status: str = "all", page: int = 1,
-    username: str = Depends(verify_admin),
+    who: dict = Depends(verify_any),
 ):
     page = max(int(page), 1)
     offset = (page - 1) * LICENSES_PER_PAGE
+
+    # 誰としてログインしているかを常に見せる。Basic認証はログアウトできないため、
+    # 意図しない資格情報のまま操作してしまう事故を防ぐ目的。
+    _role_ja = "システム管理者" if who.get("role") == "admin" else "スタッフ"
+    who_badge = (f'<span style="opacity:.8">{esc(who.get("display_name") or "")}'
+                 f'（{_role_ja}）</span>')
+    back_link = ('<a href="/admin" style="margin-left:14px">← 管理画面に戻る</a>'
+                 if who.get("role") == "admin"
+                 else '<a href="/admin/referrals" style="margin-left:14px">紹介リンク管理</a>')
     found = search_licenses(keyword=q.strip(), status=status,
                             limit=LICENSES_PER_PAGE, offset=offset)
     licenses, total = found["rows"], found["total"]
@@ -1103,7 +1163,7 @@ async def admin_licenses_page(
 <body>
 <div class="header">
   <h1>📋 ライセンス一覧</h1>
-  <a href="/admin">← 管理画面に戻る</a>
+  <span style="font-size:12px">{who_badge}{back_link}</span>
 </div>
 
 <div class="container">
@@ -1256,7 +1316,7 @@ async function delExpired() {{
 
 # ── ライセンス操作API ──
 @app.post("/admin/license/create")
-async def admin_create_license(request: Request, username: str = Depends(verify_admin)):
+async def admin_create_license(request: Request, who: dict = Depends(verify_any)):
     body = await request.json()
     email = body.get("email", "").strip()
     plan  = body.get("plan", "1month")
@@ -1279,7 +1339,7 @@ async def admin_create_license(request: Request, username: str = Depends(verify_
 
 
 @app.post("/admin/license/resend")
-async def admin_resend_license(request: Request, username: str = Depends(verify_admin)):
+async def admin_resend_license(request: Request, who: dict = Depends(verify_any)):
     """ライセンスキーを購入者へ再送する。
 
     用途は2つ。
@@ -1347,7 +1407,7 @@ async def admin_resend_license(request: Request, username: str = Depends(verify_
 
 
 @app.post("/admin/license/extend")
-async def admin_extend_license(request: Request, username: str = Depends(verify_admin)):
+async def admin_extend_license(request: Request, who: dict = Depends(verify_any)):
     body = await request.json()
     license_key = body.get("license_key", "").strip()
     months = int(body.get("months", 1))
@@ -1360,7 +1420,7 @@ async def admin_extend_license(request: Request, username: str = Depends(verify_
 
 
 @app.post("/admin/license/plan")
-async def admin_change_license_plan(request: Request, username: str = Depends(verify_admin)):
+async def admin_change_license_plan(request: Request, who: dict = Depends(verify_any)):
     """
     ライセンスのプランを手動で変更する。
     Polar側のプラン変更は自動反映していないため、
@@ -1383,7 +1443,7 @@ async def admin_change_license_plan(request: Request, username: str = Depends(ve
 
 
 @app.post("/admin/license/delete")
-async def admin_delete_license(request: Request, username: str = Depends(verify_admin)):
+async def admin_delete_license(request: Request, who: dict = Depends(verify_any)):
     """ライセンスを1件削除する。決済に紐づくものは条件を満たす場合のみ。"""
     body = await request.json()
     license_key = body.get("license_key", "").strip()
@@ -1396,7 +1456,7 @@ async def admin_delete_license(request: Request, username: str = Depends(verify_
 
 
 @app.post("/admin/license/delete-expired")
-async def admin_delete_expired_licenses(request: Request, username: str = Depends(verify_admin)):
+async def admin_delete_expired_licenses(request: Request, who: dict = Depends(verify_any)):
     """期限切れライセンスをまとめて削除する。"""
     body = await request.json()
     try:
@@ -1410,7 +1470,7 @@ async def admin_delete_expired_licenses(request: Request, username: str = Depend
 
 
 @app.get("/admin/backup")
-async def admin_backup(username: str = Depends(verify_admin)):
+async def admin_backup(who: dict = Depends(verify_any)):
     csv_data = export_licenses_csv()
     filename = f"licenses_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     bom = "\uFEFF"
@@ -1455,7 +1515,7 @@ def _ref_mrr(plans_csv: str) -> int:
 
 
 @app.get("/admin/referrals", response_class=HTMLResponse)
-async def admin_referrals(period: str = "all", username: str = Depends(verify_admin)):
+async def admin_referrals(period: str = "all", who: dict = Depends(verify_any)):
     d_from, d_to = _ref_period(period)
     try:
         stats = referral_stats(d_from, d_to)
@@ -1464,6 +1524,11 @@ async def admin_referrals(period: str = "all", username: str = Depends(verify_ad
         stats = []
 
     base = (BASE_URL or "").rstrip("/")
+
+    # スタッフには管理トップへのリンクを出さない。
+    # 押しても403になるだけで、権限がないことを分かりにくくするため。
+    top_link = ('<a href="/admin" style="color:#2E75B6">← 管理トップ</a>'
+                if who.get("role") == "admin" else "")
 
     rows = ""
     for st in stats:
@@ -1554,7 +1619,7 @@ a.dl {{ color: #2E75B6; font-size: 12px; margin-right: 18px; }}
 <div class="container">
   <h1>🔗 紹介リンク管理</h1>
   <p style="font-size:12px;margin:-8px 0 18px">
-    <a href="/admin" style="color:#2E75B6">← 管理トップ</a>
+    {top_link}
     <a href="/admin/licenses" style="color:#2E75B6;margin-left:14px">ライセンス一覧</a>
   </p>
 
@@ -1658,7 +1723,7 @@ function copyUrl(url) {{
 
 @app.post("/admin/referral/create")
 async def admin_referral_create(request: Request,
-                                username: str = Depends(verify_admin)):
+                                who: dict = Depends(verify_any)):
     body = await request.json()
     code = (body.get("code") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", code):
@@ -1679,7 +1744,7 @@ async def admin_referral_create(request: Request,
 
 @app.post("/admin/referral/active")
 async def admin_referral_active(request: Request,
-                                username: str = Depends(verify_admin)):
+                                who: dict = Depends(verify_any)):
     body = await request.json()
     code = (body.get("code") or "").strip()
     if not code:
@@ -1708,7 +1773,7 @@ def _csv_response(rows, header, filename):
 
 @app.get("/admin/referrals/csv")
 async def admin_referrals_csv(period: str = "all",
-                              username: str = Depends(verify_admin)):
+                              who: dict = Depends(verify_any)):
     d_from, d_to = _ref_period(period)
     stats = referral_stats(d_from, d_to)
     rows = []
@@ -1730,7 +1795,7 @@ async def admin_referrals_csv(period: str = "all",
 
 
 @app.get("/admin/referrals/csv/detail")
-async def admin_referrals_csv_detail(username: str = Depends(verify_admin)):
+async def admin_referrals_csv_detail(who: dict = Depends(verify_any)):
     rows = []
     for r in referral_detail_rows():
         rows.append([
