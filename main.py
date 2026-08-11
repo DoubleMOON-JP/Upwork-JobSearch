@@ -45,6 +45,7 @@ from db_redesign import (                                  # DBマイグレー�
     list_referrals, create_referral, set_referral_active,
     referral_stats, referral_detail_rows,
     list_staff, create_staff, set_staff_active, set_staff_password,  # 担当者マスタ
+    active_staff_names,
     verify_staff,                                          # スタッフのログイン照合
 )
 from plans import (                                      # プラン定義（単一情報源）
@@ -161,7 +162,11 @@ UI_TEXT = {
         # 紹介リンク管理
         "ref_title": "紹介リンク管理", "ref_h1": "🔗 紹介リンク管理",
         "back_admin_top": "← 管理トップ",
-        "ref_reg_h2": "コードを登録", "ref_ph_owner": "担当者（koji など）",
+        "ref_reg_h2": "コードを登録",
+        "ref_owner_blank": "担当者を選択",
+        "ref_no_staff": "担当者マスタに有効な担当者がいないため登録できません。"
+                        "管理画面の「担当者マスタ」から登録してください。",
+        "js_ref_need_owner": "担当者を選択してください",
         "ref_opt_channel": "種別", "ref_ph_note": "メモ（任意）",
         "ref_btn_register": "登録",
         "ref_hint_1": "推奨する付け方：<code>担当者-種別-日付</code>（例 <code>koji-x-0810</code>）。"
@@ -239,7 +244,11 @@ UI_TEXT = {
         "js_generic_error": "Something went wrong",
         "ref_title": "Referral links", "ref_h1": "🔗 Referral links",
         "back_admin_top": "← Admin home",
-        "ref_reg_h2": "Add a code", "ref_ph_owner": "owner (e.g. koji)",
+        "ref_reg_h2": "Add a code",
+        "ref_owner_blank": "Select owner",
+        "ref_no_staff": "No active owners are registered yet, so codes cannot be added. "
+                        "Ask the administrator to add one.",
+        "js_ref_need_owner": "Please select an owner.",
         "ref_opt_channel": "Channel", "ref_ph_note": "note (optional)",
         "ref_btn_register": "Add",
         "ref_hint_1": "Suggested format: <code>owner-channel-date</code> (e.g. <code>koji-x-0810</code>)."
@@ -1951,6 +1960,28 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify_any)):
                 f'style="{style};padding:5px 12px;border-radius:4px;'
                 f'text-decoration:none;font-size:12px;margin-right:6px">{label}</a>')
 
+    # 担当者は担当者マスタから選ばせる。自由入力だと同じ人が
+    # jenny / jennifer / jenifer のように複数の綴りで登録され、集計が分かれてしまう。
+    # 停止した担当者は選択肢に出さないが、過去に登録された分の表示名は残る。
+    try:
+        owners = active_staff_names()
+    except Exception as e:
+        log.error("staff list failed: %s", e)
+        owners = []
+    if owners:
+        owner_field = (f'<select id="r-owner" style="width:190px">'
+                       f'<option value="">{T["ref_owner_blank"]}</option>'
+                       + "".join(f'<option value="{esc(o)}">{esc(o)}</option>'
+                                 for o in owners)
+                       + '</select>')
+        no_staff_note = ""
+    else:
+        # 担当者が1人もいない状態。登録させると担当者なしのコードができるため、
+        # 入力自体を止めて理由を出す。
+        owner_field = ('<select id="r-owner" style="width:190px" disabled>'
+                       f'<option value="">{T["ref_owner_blank"]}</option></select>')
+        no_staff_note = (f'<div class="hint" style="color:#843C0C">{T["ref_no_staff"]}</div>')
+
     # ヒント文は URL を差し込む必要があるため、ここで組み立てておく。
     # （HTML側のf-string内では二重の波括弧処理が入り読みにくくなるため）
     _sample_url = f'{esc(base)}/r/' + ('コード' if not EN else 'CODE')
@@ -2003,11 +2034,12 @@ a.dl {{ color: #2E75B6; font-size: 12px; margin-right: 18px; }}
         <option>Facebook</option><option>YouTube</option><option>Blog</option>
         <option>Email</option><option>Other</option>
       </select>
-      <input id="r-owner" placeholder="{T['ref_ph_owner']}" style="width:190px" />
+      {owner_field}
       <input id="r-note" placeholder="{T['ref_ph_note']}" style="width:250px" />
       <button class="btn" onclick="addRef()">{T['ref_btn_register']}</button>
     </div>
     <div id="r-msg" class="msg"></div>
+    {no_staff_note}
     <div class="hint">
       {T['ref_hint_1']}<br>
       {ref_hint_2}
@@ -2055,12 +2087,14 @@ function show(msg, ok) {{
 async function addRef() {{
   const code = document.getElementById('r-code').value.trim();
   if (!code) {{ show('{T['js_ref_need_code']}', false); return; }}
+  const owner = document.getElementById('r-owner').value;
+  if (!owner) {{ show('{T['js_ref_need_owner']}', false); return; }}
   const res = await fetch('/admin/referral/create', {{
     method: 'POST', headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{
       code: code,
       channel: document.getElementById('r-channel').value,
-      owner: document.getElementById('r-owner').value.trim(),
+      owner: owner,
       note: document.getElementById('r-note').value.trim(),
     }}),
   }});
@@ -2101,12 +2135,27 @@ async def admin_referral_create(request: Request,
         return JSONResponse(
             status_code=400,
             content={"message": "コードは英数字・ハイフン・アンダースコアのみ（64文字以内）"})
+    # 担当者は担当者マスタにある有効な名前だけを受け付ける。
+    # 画面のプルダウンだけでは、APIを直接呼ばれた場合に表記ゆれを防げない。
+    owner = (body.get("owner") or "").strip()
+    try:
+        valid_owners = active_staff_names()
+    except Exception as e:
+        log.error("staff list failed: %s", e)
+        return JSONResponse(status_code=500,
+                            content={"message": "担当者マスタを読み込めませんでした"})
+    if owner not in valid_owners:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "担当者は担当者マスタから選んでください"
+                                "（停止中の担当者は選べません）"})
+
     try:
         if referral_exists(code):
             return JSONResponse(status_code=400,
                                 content={"message": "そのコードは既に登録されています"})
         create_referral(code, body.get("channel") or "",
-                        body.get("owner") or "", body.get("note") or "")
+                        owner, body.get("note") or "")
     except Exception as e:
         log.error("referral create failed: %s", e)
         return JSONResponse(status_code=500, content={"message": f"登録エラー: {e}"})
