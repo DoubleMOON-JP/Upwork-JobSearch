@@ -172,7 +172,11 @@ UI_TEXT = {
         "js_ref_need_owner": "担当者を選択してください",
         "ref_opt_channel": "種別", "ref_ph_note": "メモ（任意）",
         "ref_btn_register": "登録",
-        "ref_hint_1": "推奨する付け方：<code>担当者-種別-日付</code>（例 <code>koji-x-0810</code>）。"
+        "ref_hint_1": "付け方：<code>担当者-種別-年月日+英字</code>（例 <code>{sample}</code>）。"
+                      " <b>投稿1本につき1コード</b>を作ってください（使い回すと、どの投稿が効いたか分けられません）。<br>"
+                      "日付は<b>年月日の6桁</b>。年を入れないと翌年の同じ日付と重複します。"
+                      " 末尾は<b>必ず英字1文字</b>で、1本目から <code>a</code> を付けます。"
+                      "同じ日に同じSNSへ複数回投稿する場合は <code>b</code> <code>c</code> と続けます。<br>"
                       " 外部のインフルエンサーは <code>infl-tanaka</code> のように日付なしにすると使い回せます。<br>"
                       "<b>着地先</b>は、そのリンクを踏んだ人が見るLPです。投稿で紹介する求人サイトに合わせてください。",
         "ref_hint_2": "登録すると <code>{url}</code> が使えるようになります。",
@@ -258,7 +262,11 @@ UI_TEXT = {
         "js_ref_need_owner": "Please select an owner.",
         "ref_opt_channel": "Channel", "ref_ph_note": "note (optional)",
         "ref_btn_register": "Add",
-        "ref_hint_1": "Suggested format: <code>owner-channel-date</code> (e.g. <code>koji-x-0810</code>)."
+        "ref_hint_1": "Format: <code>owner-channel-date+letter</code> (e.g. <code>{sample}</code>)."
+                      " <b>Create one code per post</b> — reusing a code makes it impossible to tell which post worked.<br>"
+                      "Use a <b>six-digit date</b>; without the year, next year's dates would clash with this year's."
+                      " Always end with <b>a letter</b> — start with <code>a</code> on the first post, then"
+                      " <code>b</code>, <code>c</code> for further posts to the same platform on the same day.<br>"
                       " For outside influencers, drop the date — <code>infl-tanaka</code> — so the code can be reused.<br>"
                       "<b>Landing</b> is the page people see when they follow your link."
                       " Match it to the job board you are posting about.",
@@ -2014,10 +2022,14 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify_any)):
                             for sid in enabled_sites())
                   + '</select>')
 
-    # ヒント文は URL を差し込む必要があるため、ここで組み立てておく。
+    # ヒント文は URL と日付を差し込む必要があるため、ここで組み立てておく。
     # （HTML側のf-string内では二重の波括弧処理が入り読みにくくなるため）
     _sample_url = f'{esc(base)}/r/' + ('コード' if not EN else 'CODE')
     ref_hint_2 = T["ref_hint_2"].replace("{url}", _sample_url)
+    # 例に使う日付は実行時のもの。固定文字列だと時間が経つほど古く見え、
+    # 「いつの例か」が伝わらなくなる。
+    sample_code = f"koji-x-{datetime.now().strftime('%y%m%d')}a"
+    ref_hint_1 = T["ref_hint_1"].replace("{sample}", sample_code)
 
     tabs = (tab("all", T["tab_all"]) + tab("this_month", T["tab_this_month"])
             + tab("last_month", T["tab_last_month"]) + tab("30d", T["tab_30d"]))
@@ -2059,7 +2071,7 @@ a.dl {{ color: #2E75B6; font-size: 12px; margin-right: 18px; }}
   <div class="card">
     <h2>{T['ref_reg_h2']}</h2>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-      <input id="r-code" placeholder="koji-x-0810" style="width:190px" />
+      <input id="r-code" placeholder="{sample_code}" style="width:190px" />
       <select id="r-channel">
         <option value="">{T['ref_opt_channel']}</option>
         <option>X</option><option>LinkedIn</option><option>Reddit</option>
@@ -2074,7 +2086,7 @@ a.dl {{ color: #2E75B6; font-size: 12px; margin-right: 18px; }}
     <div id="r-msg" class="msg"></div>
     {no_staff_note}
     <div class="hint">
-      {T['ref_hint_1']}<br>
+      {ref_hint_1}<br>
       {ref_hint_2}
     </div>
   </div>
