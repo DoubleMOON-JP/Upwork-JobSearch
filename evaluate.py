@@ -11,6 +11,7 @@
 import os
 import json
 import re
+import logging
 
 import httpx
 from fastapi import APIRouter, Request, HTTPException
@@ -21,6 +22,10 @@ from rate_limit import check_and_consume, release
 from sites import get_site, is_valid_site, DEFAULT_SITE
 
 router = APIRouter()
+
+# 切り出しの目印が見つからない場合の記録に使う。
+# サイト側の文言変更に気づく手がかりになるため、握りつぶさず残す。
+log = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -125,6 +130,63 @@ Return ONLY a JSON array, no prose, no markdown fences. Each element:
 Sort by score descending.{ai_request_line}"""
 
 
+def trim_pasted_text(text: str, site_conf: dict) -> tuple:
+    """貼付テキストから求人一覧の部分だけを切り出す。(切り出し後, 記録用の情報)
+
+    求人サイトによっては、ページ全体をコピーするとフィルター欄やフッターが
+    大量に混ざる。Freelancer.com の左サイドバーには Urgent / Recruiter /
+    Python など、実際の案件にも現れる語が並ぶため、AIが案件と誤認しうる。
+
+    そこで sites.py に定義した目印の前後を機械的に落とす。
+      trim_start_after : この語より前を捨てる（最初の1つ目を使う）
+      trim_end_before  : この語より後を捨てる（目印より後ろで最後に出るもの）
+
+    ── 安全設計 ──────────────────────────────────────────
+    目印が見つからない場合は「何もせず元のテキストを返す」。
+    サイトが画面文言を変えたときに、切り出しに失敗して0件になる方が
+    ノイズが残るより有害なため。最悪でもプロンプト任せの現状に戻るだけ。
+    切り詰めすぎを防ぐため、結果が極端に短くなる場合も元のテキストを返す。
+
+    第2の戻り値は、サイト構造の変化に気づくための記録用。
+    「目印が見つからなかった」が続けば、サイト側の変更を疑える。
+    """
+    original = text or ""
+    start_mark = (site_conf or {}).get("trim_start_after")
+    end_mark = (site_conf or {}).get("trim_end_before")
+    info = {"trimmed": False, "start_found": None, "end_found": None,
+            "before": len(original), "after": len(original)}
+    if not start_mark and not end_mark:
+        return original, info          # 切り出しを定義していないサイト（Upwork等）
+
+    body = original
+    if start_mark:
+        idx = body.find(start_mark)
+        info["start_found"] = idx >= 0
+        if idx >= 0:
+            body = body[idx + len(start_mark):]
+    if end_mark:
+        # 目印より後ろで最後に出るものを使う。求人説明文の中に同じ語が
+        # 現れても、そこで切ってしまわないようにするため。
+        idx = body.rfind(end_mark)
+        info["end_found"] = idx >= 0
+        if idx >= 0:
+            body = body[:idx]
+
+    body = body.strip()
+    # 目印が1つも当たらなければ、実際には何も切れていない。
+    # ここで trimmed=True にすると記録が実態と食い違い、監視の意味がなくなる。
+    if not info["start_found"] and not info["end_found"]:
+        return original, info
+    # 切り詰めすぎの検出。目印が想定外の場所で当たると本文まで失われる。
+    # 元の1割を下回ったら信用せず、元のテキストを使う。
+    if not body or len(body) < len(original.strip()) * 0.1:
+        return original, info
+
+    info["trimmed"] = True
+    info["after"] = len(body)
+    return body, info
+
+
 def _safe_score(val, default: int = 0) -> int:
     """AIが返す score を安全に整数化する。
 
@@ -218,7 +280,20 @@ async def evaluate(request: Request):
         )
     model = (get_ai_settings() or {}).get("default_model", DEFAULT_MODEL)
 
-    prompt = build_prompt(base_template, profile, ai_request, pasted_text, site_conf)
+    # 貼付テキストからサイト固有のノイズを機械的に落とす。
+    # 定義のないサイト（Upwork等）は素通りするため、挙動は変わらない。
+    cleaned_text, trim_info = trim_pasted_text(pasted_text, site_conf)
+    if trim_info.get("start_found") is False or trim_info.get("end_found") is False:
+        # 目印が見つからない＝サイト側の文言が変わった可能性。
+        # 採点自体は続ける（切り出さずに全文を渡す）が、記録は残す。
+        log.warning(
+            "trim markers not found (site=%s start=%s end=%s len=%s) "
+            "- the site layout may have changed",
+            site, trim_info.get("start_found"), trim_info.get("end_found"),
+            trim_info.get("before"),
+        )
+
+    prompt = build_prompt(base_template, profile, ai_request, cleaned_text, site_conf)
 
     # ④ Gemini 呼び出し（Kojiのキーで）
     url = GEMINI_ENDPOINT.format(model=model)
