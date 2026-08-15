@@ -43,7 +43,7 @@ from db_redesign import (                                  # DBマイグレー�
     get_license_row,                                       # キー再送で使用
     record_referral_visit, referral_exists,                # 紹介リンク（SNS流入計測）
     list_referrals, create_referral, set_referral_active,
-    referral_stats, referral_detail_rows,
+    referral_stats, referral_detail_rows, referral_site,
     list_staff, create_staff, set_staff_active, set_staff_password,  # 担当者マスタ
     active_staff_names,
     verify_staff,                                          # スタッフのログイン照合
@@ -164,13 +164,17 @@ UI_TEXT = {
         "back_admin_top": "← 管理トップ",
         "ref_reg_h2": "コードを登録",
         "ref_owner_blank": "担当者を選択",
+        "ref_site_blank": "着地先を選択",
+        "rth_site": "着地先",
+        "js_ref_need_site": "着地先を選択してください",
         "ref_no_staff": "担当者マスタに有効な担当者がいないため登録できません。"
                         "管理画面の「担当者マスタ」から登録してください。",
         "js_ref_need_owner": "担当者を選択してください",
         "ref_opt_channel": "種別", "ref_ph_note": "メモ（任意）",
         "ref_btn_register": "登録",
         "ref_hint_1": "推奨する付け方：<code>担当者-種別-日付</code>（例 <code>koji-x-0810</code>）。"
-                      " 外部のインフルエンサーは <code>infl-tanaka</code> のように日付なしにすると使い回せます。",
+                      " 外部のインフルエンサーは <code>infl-tanaka</code> のように日付なしにすると使い回せます。<br>"
+                      "<b>着地先</b>は、そのリンクを踏んだ人が見るLPです。投稿で紹介する求人サイトに合わせてください。",
         "ref_hint_2": "登録すると <code>{url}</code> が使えるようになります。",
         "ref_stats_h2": "成績",
         "tab_all": "全期間", "tab_this_month": "今月",
@@ -246,13 +250,18 @@ UI_TEXT = {
         "back_admin_top": "← Admin home",
         "ref_reg_h2": "Add a code",
         "ref_owner_blank": "Select owner",
+        "ref_site_blank": "Select landing page",
+        "rth_site": "Landing",
+        "js_ref_need_site": "Please select a landing page.",
         "ref_no_staff": "No active owners are registered yet, so codes cannot be added. "
                         "Ask the administrator to add one.",
         "js_ref_need_owner": "Please select an owner.",
         "ref_opt_channel": "Channel", "ref_ph_note": "note (optional)",
         "ref_btn_register": "Add",
         "ref_hint_1": "Suggested format: <code>owner-channel-date</code> (e.g. <code>koji-x-0810</code>)."
-                      " For outside influencers, drop the date — <code>infl-tanaka</code> — so the code can be reused.",
+                      " For outside influencers, drop the date — <code>infl-tanaka</code> — so the code can be reused.<br>"
+                      "<b>Landing</b> is the page people see when they follow your link."
+                      " Match it to the job board you are posting about.",
         "ref_hint_2": "Once added, <code>{url}</code> becomes available.",
         "ref_stats_h2": "Results",
         "tab_all": "All time", "tab_this_month": "This month",
@@ -424,7 +433,20 @@ async def referral_redirect(code: str, request: Request):
             # 記録に失敗してもリダイレクトは続ける。計測は付加機能であり、
             # ここで止めると宣伝リンクそのものが機能しなくなる。
             log.error("could not record referral visit (%s): %s", code, e)
-        return RedirectResponse(f"/for/{DEFAULT_SITE}?ref={code}", status_code=302)
+
+        # 着地先はコードごとに持つ。Freelancer.com の投稿からUpworkのLPへ
+        # 飛ばすと内容が噛み合わず、購入につながらないため。
+        # 何があってもLPには着地させる（宣伝リンクの入口であり、
+        # エラー画面を見せる方が損失が大きい）。次のいずれも既定サイトへ送る：
+        #   ・未登録のコード ・DB参照に失敗 ・記録された着地先が後で無効化された
+        site = DEFAULT_SITE
+        try:
+            recorded = referral_site(code)
+            if recorded and is_valid_site(recorded):
+                site = recorded
+        except Exception as e:
+            log.error("could not resolve referral site (%s): %s", code, e)
+        return RedirectResponse(f"/for/{site}?ref={code}", status_code=302)
     return RedirectResponse("/", status_code=302)
 
 
@@ -1934,6 +1956,7 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify_any)):
           <td style="font-family:monospace;font-size:12px">{esc(code)}</td>
           <td style="font-size:12px">{esc(st.get('channel') or '—')}</td>
           <td style="font-size:12px">{esc(st.get('owner') or '—')}</td>
+          <td style="font-size:11px">{esc(site_label(st.get('site') or DEFAULT_SITE))}</td>
           <td style="text-align:right">{visits}{bot_note}</td>
           <td style="text-align:right"><b>{purchases}</b></td>
           <td style="text-align:right">{cvr}</td>
@@ -1949,7 +1972,7 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify_any)):
         </tr>"""
 
     if not rows:
-        rows = ('<tr><td colspan="11" style="text-align:center;color:#999;padding:24px">'
+        rows = ('<tr><td colspan="12" style="text-align:center;color:#999;padding:24px">'
                 f'{T["ref_empty"]}</td></tr>')
 
     def tab(key, label):
@@ -1981,6 +2004,15 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify_any)):
         owner_field = ('<select id="r-owner" style="width:190px" disabled>'
                        f'<option value="">{T["ref_owner_blank"]}</option></select>')
         no_staff_note = (f'<div class="hint" style="color:#843C0C">{T["ref_no_staff"]}</div>')
+
+    # 着地先（/r/{code} が飛ぶ先のLP）。公開中のサイトだけを出す。
+    # 選択必須にしているのは、選び忘れると投稿内容と違うLPに着地させてしまい、
+    # 内容が噛み合わず購入につながらないため。
+    site_field = ('<select id="r-site" style="width:150px">'
+                  f'<option value="">{T["ref_site_blank"]}</option>'
+                  + "".join(f'<option value="{esc(sid)}">{esc(site_label(sid))}</option>'
+                            for sid in enabled_sites())
+                  + '</select>')
 
     # ヒント文は URL を差し込む必要があるため、ここで組み立てておく。
     # （HTML側のf-string内では二重の波括弧処理が入り読みにくくなるため）
@@ -2035,6 +2067,7 @@ a.dl {{ color: #2E75B6; font-size: 12px; margin-right: 18px; }}
         <option>Email</option><option>Other</option>
       </select>
       {owner_field}
+      {site_field}
       <input id="r-note" placeholder="{T['ref_ph_note']}" style="width:250px" />
       <button class="btn" onclick="addRef()">{T['ref_btn_register']}</button>
     </div>
@@ -2052,6 +2085,7 @@ a.dl {{ color: #2E75B6; font-size: 12px; margin-right: 18px; }}
     <table>
       <thead>
         <tr><th>{T['rth_code']}</th><th>{T['rth_channel']}</th><th>{T['rth_owner']}</th>
+            <th>{T['rth_site']}</th>
             <th style="text-align:right">{T['rth_visits']}</th>
             <th style="text-align:right">{T['rth_purchases']}</th>
             <th style="text-align:right">{T['rth_cvr']}</th>
@@ -2089,12 +2123,15 @@ async function addRef() {{
   if (!code) {{ show('{T['js_ref_need_code']}', false); return; }}
   const owner = document.getElementById('r-owner').value;
   if (!owner) {{ show('{T['js_ref_need_owner']}', false); return; }}
+  const site = document.getElementById('r-site').value;
+  if (!site) {{ show('{T['js_ref_need_site']}', false); return; }}
   const res = await fetch('/admin/referral/create', {{
     method: 'POST', headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{
       code: code,
       channel: document.getElementById('r-channel').value,
       owner: owner,
+      site: site,
       note: document.getElementById('r-note').value.trim(),
     }}),
   }});
@@ -2150,12 +2187,19 @@ async def admin_referral_create(request: Request,
             content={"message": "担当者は担当者マスタから選んでください"
                                 "（停止中の担当者は選べません）"})
 
+    # 着地先も同様にサーバー側で検証する。
+    site = (body.get("site") or "").strip().lower()
+    if not is_valid_site(site):
+        return JSONResponse(
+            status_code=400,
+            content={"message": "着地先は公開中の求人サイトから選んでください"})
+
     try:
         if referral_exists(code):
             return JSONResponse(status_code=400,
                                 content={"message": "そのコードは既に登録されています"})
         create_referral(code, body.get("channel") or "",
-                        owner, body.get("note") or "")
+                        owner, body.get("note") or "", site)
     except Exception as e:
         log.error("referral create failed: %s", e)
         return JSONResponse(status_code=500, content={"message": f"登録エラー: {e}"})
@@ -2202,13 +2246,14 @@ async def admin_referrals_csv(period: str = "all",
         purchases = st["purchases"] or 0
         rows.append([
             st["code"], st.get("channel") or "", st.get("owner") or "",
+            site_label(st.get("site") or DEFAULT_SITE),
             visits, (st["visits"] or 0) - visits, purchases,
             (f"{(purchases / visits * 100):.1f}" if visits else ""),
             st["active_cnt"] or 0, _ref_mrr(st.get("active_plans")),
             "有効" if st["is_active"] else "停止中",
             st.get("note") or "",
         ])
-    header = ["コード", "種別", "担当者", "訪問（人）", "訪問（bot）", "購入",
+    header = ["コード", "種別", "担当者", "着地先", "訪問（人）", "訪問（bot）", "購入",
               "転換率(%)", "継続中", "MRR(USD)", "状態", "メモ"]
     name = f"referrals_{period}_{datetime.now().strftime('%Y%m%d')}.csv"
     return _csv_response(rows, header, name)
@@ -2220,12 +2265,13 @@ async def admin_referrals_csv_detail(who: dict = Depends(verify_any)):
     for r in referral_detail_rows():
         rows.append([
             r.get("ref_code") or "", r.get("channel") or "", r.get("owner") or "",
+            site_label(r.get("site") or DEFAULT_SITE),
             r.get("license_key") or "", r.get("email") or "",
             plan_label(r.get("plan") or ""), plan_price_usd(r.get("plan") or ""),
             r.get("status") or "",
             str(r.get("created_at") or "")[:19], str(r.get("expires_at") or ""),
         ])
-    header = ["コード", "種別", "担当者", "ライセンスキー", "メール",
+    header = ["コード", "種別", "担当者", "着地先", "ライセンスキー", "メール",
               "プラン", "月額(USD)", "状態", "発行日時", "有効期限"]
     name = f"referrals_detail_{datetime.now().strftime('%Y%m%d')}.csv"
     return _csv_response(rows, header, name)

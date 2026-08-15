@@ -79,6 +79,13 @@ def migrate():
                     is_active  BOOLEAN NOT NULL DEFAULT TRUE,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                -- どの求人サイトのLPへ着地させるか。/r/{code} の飛び先を決める。
+                -- Freelancer.com の投稿からUpworkのLPへ飛ぶと内容が噛み合わず、
+                -- 購入につながらないため、コードごとに持たせる。
+                -- 既定値を upwork にしているのは、この列を足す前に登録された
+                -- コードの挙動を変えないため（従来は常に /for/upwork だった）。
+                ALTER TABLE referrals ADD COLUMN IF NOT EXISTS site TEXT
+                    NOT NULL DEFAULT 'upwork';
 
                 -- 訪問は1件ずつ日時つきで残す（集計してからでは期間を切り直せない）。
                 -- リセットは行わず、画面側で期間を指定して集計する。
@@ -267,17 +274,35 @@ def list_referrals(include_inactive: bool = True):
 
 
 def create_referral(code: str, channel: str = "", owner: str = "",
-                    note: str = "") -> dict:
-    """紹介コードを登録する。重複時は例外。"""
+                    note: str = "", site: str = "upwork") -> dict:
+    """紹介コードを登録する。重複時は例外。
+
+    site は /r/{code} の着地先。呼び出し側で妥当性を検証してから渡すこと
+    （ここでは検証しない。sites.py への依存をDB層に持ち込まないため）。
+    """
     code = (code or "").strip()
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                """INSERT INTO referrals (code, channel, owner, note)
-                        VALUES (%s, %s, %s, %s) RETURNING *""",
-                (code, channel or None, owner or None, note or None),
+                """INSERT INTO referrals (code, channel, owner, note, site)
+                        VALUES (%s, %s, %s, %s, %s) RETURNING *""",
+                (code, channel or None, owner or None, note or None,
+                 site or "upwork"),
             )
             return dict(cur.fetchone())
+
+
+def referral_site(code: str) -> str | None:
+    """そのコードの着地先サイトを返す。未登録なら None。
+
+    /r/{code} から呼ばれる。ここで例外を投げるとリダイレクトが止まり、
+    宣伝リンクそのものが機能しなくなるため、呼び出し側で握りつぶすこと。
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT site FROM referrals WHERE code = %s", (code,))
+            row = cur.fetchone()
+    return row[0] if row else None
 
 
 def set_referral_active(code: str, active: bool) -> None:
@@ -348,6 +373,7 @@ def referral_stats(date_from: str = None, date_to: str = None):
 
     sql = f"""
         SELECT r.code, r.channel, r.owner, r.note, r.is_active, r.created_at,
+               r.site,
                COALESCE(v.visits, 0)      AS visits,
                COALESCE(v.human, 0)       AS human_visits,
                COALESCE(p.purchases, 0)   AS purchases,
@@ -392,7 +418,7 @@ def referral_detail_rows():
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                """SELECT l.ref_code, r.channel, r.owner,
+                """SELECT l.ref_code, r.channel, r.owner, r.site,
                           l.license_key, l.email, l.plan, l.status,
                           l.created_at, l.expires_at
                      FROM licenses l
