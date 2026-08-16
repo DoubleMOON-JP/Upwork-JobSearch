@@ -95,7 +95,7 @@ SITES = {
         # チャット欄の数行（Messages/Search/Chats/Requests）は残るが、
         # 求人を取りこぼすより無害と判断している。
         "trim_end_before": "Help & Support",
-        "enabled": False,   # LPとプロンプトが揃うまで非公開
+        "enabled": True,
     },
 }
 
