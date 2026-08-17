@@ -56,14 +56,109 @@ def _strip_fence(text: str) -> str:
     return text.replace(FENCE_START, "").replace(FENCE_END, "")
 
 
-def build_prompt(base_template: str, profile: dict, ai_request: str, pasted_text: str,
-                 site_conf: dict) -> str:
+# ── 為替レートの参照表 ────────────────────────────────────
+# 通貨コードの形式。ISO 4217 は英大文字3文字。これ以外は採用しない
+# （設定の打ち間違いをそのままAIに渡さないため）。
+_CURRENCY_CODE_RE = re.compile(r"[A-Z]{3}")
+
+# 為替レートの保管場所。ai_settings（DB）の2つのキーを使う。
+#   exchange_rates         : 対USDレートのJSON  {"INR": 0.0115, "CAD": 0.73, ...}
+#   exchange_rates_updated : 最終更新日 'YYYY-MM-DD'（保存時に自動で入る）
+#
+# 【なぜプロンプト本文から出したか】
+# レートは全サイト共通の運用値であり、対応サイトが増えるたびに各プロンプトへ
+# 書き写すのは重複になる。書き写し漏れがあると、サイトによって同じ通貨が
+# 違うレートで評価される。数値はDBに1か所だけ持ち、どのサイトから採点しても
+# 同じ表を差し込む形にした。
+#
+# 一方「換算が要るサイトかどうか」は sites.py の multi_currency で持つ。
+# これはサイトを追加するときに決まる構造であり、運用中に変わらないため。
+SETTING_RATES = "exchange_rates"
+SETTING_RATES_UPDATED = "exchange_rates_updated"
+
+
+def build_currency_block(site_conf: dict, settings: dict) -> str:
+    """採点プロンプトに差し込む為替レートの参照表を組み立てる。
+
+    差し込まない場合は空文字を返す。空文字のときプロンプトは
+    従来と1文字も変わらない（Upworkの回帰リスクをなくすため）。
+
+    ── 差し込まない条件 ──────────────────────────────────
+      ・sites.py で multi_currency を指定していないサイト（Upwork等）
+      ・ai_settings に exchange_rates が無い（＝まだ設定していない）
+      ・値がJSONとして読めない／オブジェクトでない
+      ・使える通貨が1件も無い
+
+    いずれの場合も採点は止めない。レートが無くても、予算の数値そのものは
+    求人本文に書かれており、プロンプト本文の採点基準だけで一次選別は成立する。
+    ここで例外を投げると、設定の打ち間違い1つで採点全体が止まってしまう。
     """
-    base_template : DBの有効プロンプト（採点基準の本体）
-    profile       : スキル・時給・避けたいKW・優先KW 等
-    ai_request    : ユーザーからAIへの自由要望
-    pasted_text   : 求人サイトからコピーした生テキスト（複数求人・ヘッダー等ゴミ混じり可）
-    site_conf     : sites.py のサイト定義（表示名・ノイズ除去ヒント）
+    if not (site_conf or {}).get("multi_currency"):
+        return ""
+
+    raw = str((settings or {}).get(SETTING_RATES) or "").strip()
+    if not raw:
+        # 「まだ設定していない」は異常ではなく通常の状態（この機能を入れた
+        # 直後がこれ）。採点のたびに警告を出すとログが埋まり、障害調査の
+        # 邪魔になるため、ここは黙って従来動作に戻す。
+        return ""
+
+    try:
+        rates = json.loads(raw)
+    except (TypeError, ValueError):
+        # 設定を直した人が気づけるようログには残す（採点は続ける）。
+        log.warning("%s is not valid JSON; the currency block was skipped",
+                    SETTING_RATES)
+        return ""
+    if not isinstance(rates, dict):
+        log.warning("%s is not a JSON object; the currency block was skipped",
+                    SETTING_RATES)
+        return ""
+
+    lines = []
+    for code, value in rates.items():
+        code = str(code).strip().upper()
+        if not _CURRENCY_CODE_RE.fullmatch(code):
+            continue
+        try:
+            rate = float(value)
+        except (TypeError, ValueError):
+            continue
+        # 0や負の値は換算に使えない。桁を誤って0を入れた場合の保険。
+        if rate <= 0:
+            continue
+        # :g は末尾の余分な0を落とす（0.730000 ではなく 0.73 と書く）。
+        lines.append(f"1 {code} = {rate:g} USD")
+
+    if not lines:
+        log.warning("%s has no usable entry; the currency block was skipped",
+                    SETTING_RATES)
+        return ""
+
+    as_of = str((settings or {}).get(SETTING_RATES_UPDATED) or "").strip()
+    heading = ("## Currency reference (fixed rates" +
+               (f", as of {as_of}" if as_of else "") + ")")
+
+    return (
+        "\n\n" + heading + "\n"
+        + "\n".join(lines)
+        + "\nWhen a budget is written in a currency other than USD, convert it to USD\n"
+          "with these rates before judging whether the budget fits the scope of the work.\n"
+          "These rates are approximate and are only for telling apart the rough size of\n"
+          "a budget. Do not quote a converted figure to the user as if it were exact."
+    )
+
+
+def build_prompt(base_template: str, profile: dict, ai_request: str, pasted_text: str,
+                 site_conf: dict, currency_block: str = "") -> str:
+    """
+    base_template  : DBの有効プロンプト（採点基準の本体）
+    profile        : スキル・時給・避けたいKW・優先KW 等
+    ai_request     : ユーザーからAIへの自由要望
+    pasted_text    : 求人サイトからコピーした生テキスト（複数求人・ヘッダー等ゴミ混じり可）
+    site_conf      : sites.py のサイト定義（表示名・ノイズ除去ヒント）
+    currency_block : 為替レートの参照表（build_currency_block の戻り値）。
+                     空文字なら何も差し込まれず、従来と同じプロンプトになる。
     """
     profile_lines = []
     if profile.get("skills"):        profile_lines.append(f"- Skills: {profile['skills']}")
@@ -94,7 +189,7 @@ def build_prompt(base_template: str, profile: dict, ai_request: str, pasted_text
     return f"""{base_template}
 
 ## Freelancer profile
-{profile_block}
+{profile_block}{currency_block}
 
 ## Raw pasted text from {source_label} (may contain multiple jobs plus navigation/footer noise)
 Split this into individual job postings. IGNORE anything that is not a job
@@ -290,7 +385,9 @@ async def evaluate(request: Request):
             f"no active prompt configured for site '{site}'. "
             f"管理画面で {site} 用のプロンプトを有効化してください。"
         )
-    model = (get_ai_settings() or {}).get("default_model", DEFAULT_MODEL)
+    # AI設定は1回だけ読む。モデル名と為替レートの両方がここに入っている。
+    settings = get_ai_settings() or {}
+    model = settings.get("default_model", DEFAULT_MODEL)
 
     # 貼付テキストからサイト固有のノイズを機械的に落とす。
     # 定義のないサイト（Upwork等）は素通りするため、挙動は変わらない。
@@ -305,7 +402,12 @@ async def evaluate(request: Request):
             trim_info.get("before"),
         )
 
-    prompt = build_prompt(base_template, profile, ai_request, cleaned_text, site_conf)
+    # 為替レートの参照表。換算が要らないサイト（Upwork等）と、レートが
+    # 未設定のときは空文字になり、プロンプトは従来と同じものになる。
+    currency_block = build_currency_block(site_conf, settings)
+
+    prompt = build_prompt(base_template, profile, ai_request, cleaned_text, site_conf,
+                          currency_block)
 
     # ④ Gemini 呼び出し（Kojiのキーで）
     url = GEMINI_ENDPOINT.format(model=model)
