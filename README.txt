@@ -1,23 +1,58 @@
-JobSearch ソース一式  v3.24（2026-08-18）
+JobSearch ソース一式  v3.25（2026-08-18）
 ====================================================================
 
-■ このリリースの内容：main.py の分割（第3段階・完了）
+■ このリリースの内容：求人の取りこぼし対策（第1段階）
 
-  管理トップとプロンプト管理を切り出し、分割を完了した。
+  変更したファイルは evaluate.py の1箇所だけ（＋APP_VERSION）。
 
-      main.py            1,340行 → 524行（-816行）
-      admin_home.py      新規 705行  /admin ＋ 広告欄・担当者マスタ・配布ファイルAPI
-      admin_prompts.py   新規 224行  プロンプト編集画面＋作成/更新/有効化API
+  【背景】
+  同じ貼付テキスト（Upwork 30件）で3回採点したところ、
+  出力件数が 26件 / 29件 / 15件 とばらついた。
+  落ちた求人を調べると、点数と強く相関していた。
 
-  あわせて、使わなくなった import を40件整理した。
+      3回目で残った15件   … 平均 60.3点
+      3回目で落ちた14件   … 平均 15.4点
+      3回とも落ちた求人   … Inventory Tracking Database with QR Codes
 
-  【分割の経過】
-      v3.21  2,573行（分割前）
-      v3.22  1,896行  ライセンス一覧＋共通部品
-      v3.23  1,341行  スタッフ画面＋紹介リンク管理
-      v3.24    524行  管理トップ＋プロンプト管理   ← 当初比 80%削減
+  つまりランダムな取りこぼしではなく、AIが「プロフィールに合わない求人は
+  出さなくてよい」と判断して省いていた。
 
-  ※ 機能の変更は一切ない。画面のHTMLは1文字も変えていない。
+  【原因と考えられる箇所】
+  従来の指示は次の3行だった。
+
+      Split this into individual job postings. IGNORE anything that is not a job
+      (…noise…).
+      For EACH job, extract its fields and score it against the profile.
+
+  「IGNORE anything that is not a job」は本来ヘッダー・広告の除外を指すが、
+  「合わない求人＝出さなくてよい」と拡大解釈される余地があった。
+
+  【変更内容】
+  ノイズ除去の指示は残したまま、直後に Completeness セクションを追加した。
+
+      ## Completeness (STRICT)
+      Output EVERY job posting you find. This rule overrides any tendency
+      to be concise.
+      - A real job posting is never "not a job", however irrelevant, low-paid,
+        vague or badly written it is. Irrelevance is not a reason to leave it
+        out: give it a low score and still return it.
+      - Do NOT return only the best matches, only the top few, or a shortened
+        selection. There is no upper limit on how many jobs you may return.
+      - Do NOT merge two separate postings into one entry.
+      - Never invent a job that is not present in the text.
+
+  あわせて、除外対象に adverts / promoted banners / related searches /
+  category lists を明記した（求人一覧には実質広告が混ざるため）。
+
+  【効果の測り方】
+  同じ貼付テキスト（sha256 34be63c5…、30件）でもう3回採点する。
+      3回とも30件そろう  → 対策完了
+      まだ落ちる          → 第2段階（件数をプログラムで数えてAIに渡す）へ
+
+  ※ 第2段階は固定値ではなく、貼付テキストから毎回数える方式にする。
+    最終ページで件数が少ない場合にも対応するため。
+    また数え間違いで新たな取りこぼしを作らないよう、
+    「ちょうどN件」ではなく「少なくともN件」と伝える設計とする。
 
 
 ■ main.py に残っているもの（16ルート）
@@ -44,7 +79,7 @@ JobSearch ソース一式  v3.24（2026-08-18）
   admin_prompts.py    プロンプト管理                                224行
   staff_console.py    スタッフ用画面 /staff                         206行
   settings_admin.py   AI設定（為替レート）                          396行
-  evaluate.py         サーバー側 Gemini 採点                        461行
+  evaluate.py         サーバー側 Gemini 採点                        471行  ← 変更
   sites.py            対応求人サイト定義                            140行
   requirements.txt    依存パッケージ
 
@@ -92,7 +127,19 @@ JobSearch ソース一式  v3.24（2026-08-18）
   admin_referrals.py の BASE_URL がその例。
 
 
-■ 検証済みの内容（v3.24）
+■ 検証済みの内容（v3.25）
+
+  ・プロンプトの差分が意図した1箇所のみ（Upwork・Freelancer.com 双方）
+  ・採点基準・セキュリティ規則・応募要件の抽出指示・出力仕様・
+    点数降順の指示は1文字も変わっていない
+  ・貼付テキスト以降（フェンス〜末尾）が新旧で完全一致
+  ・為替レート参照表の位置と内容が従来どおり（Freelancer.com）
+  ・ユーザーの自由要望ブロックが従来どおり末尾に付く
+  ・サイト固有のノイズ除去指示を消していないこと
+  ・全10ファイルが構文エラーなし
+
+
+■ 検証済みの内容（v3.24 から継続）
 
   ・ルート46本が変更前後で完全に一致（消失・重複なし）
   ・未定義の名前なし（8ファイルとも静的解析で確認）

@@ -198,9 +198,20 @@ def build_prompt(base_template: str, profile: dict, ai_request: str, pasted_text
 {profile_block}{currency_block}
 
 ## Raw pasted text from {source_label} (may contain multiple jobs plus navigation/footer noise)
-Split this into individual job postings. IGNORE anything that is not a job
-({noise_hint} etc.).
-For EACH job, extract its fields and score it against the profile.
+Split this into individual job postings.
+Ignore the parts that are not job postings at all: {noise_hint}, adverts, promoted
+banners, "related searches", category lists and similar page furniture.
+
+## Completeness (STRICT)
+Output EVERY job posting you find. This rule overrides any tendency to be concise.
+- A real job posting is never "not a job", however irrelevant, low-paid, vague or
+  badly written it is. Irrelevance is not a reason to leave it out: give it a low
+  score and still return it.
+- Do NOT return only the best matches, only the top few, or a shortened selection.
+  There is no upper limit on how many jobs you may return.
+- Do NOT merge two separate postings into one entry.
+- Never invent a job that is not present in the text.
+Then, for EACH job, extract its fields and score it against the profile.
 
 {FENCE_START}
 {_strip_fence(pasted_text)}
