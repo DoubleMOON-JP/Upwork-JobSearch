@@ -62,8 +62,13 @@ def _strip_fence(text: str) -> str:
 _CURRENCY_CODE_RE = re.compile(r"[A-Z]{3}")
 
 # 為替レートの保管場所。ai_settings（DB）の2つのキーを使う。
-#   exchange_rates         : 対USDレートのJSON  {"INR": 0.0115, "CAD": 0.73, ...}
+#   exchange_rates         : 1USDが何単位になるかのJSON  {"INR": 95, "JPY": 160, ...}
 #   exchange_rates_updated : 最終更新日 'YYYY-MM-DD'（保存時に自動で入る）
+#
+# 【向きに注意】値は「1 USD = N 通貨」の N 。逆向き（1通貨 = N USD）にすると
+# INR が 0.0105 のような小さな数になり、桁を1つ間違えても気づけない。
+# 為替は「1ドル＝95ルピー」の形で公表されるため、その向きに合わせている。
+# 移行前のプロンプト本文もこの向きで書かれており、実績のある表記でもある。
 #
 # 【なぜプロンプト本文から出したか】
 # レートは全サイト共通の運用値であり、対応サイトが増えるたびに各プロンプトへ
@@ -127,8 +132,8 @@ def build_currency_block(site_conf: dict, settings: dict) -> str:
         # 0や負の値は換算に使えない。桁を誤って0を入れた場合の保険。
         if rate <= 0:
             continue
-        # :g は末尾の余分な0を落とす（0.730000 ではなく 0.73 と書く）。
-        lines.append(f"1 {code} = {rate:g} USD")
+        # :g は末尾の余分な0を落とす（4.100000 ではなく 4.1 と書く）。
+        lines.append(f"1 USD = {rate:g} {code}")
 
     if not lines:
         log.warning("%s has no usable entry; the currency block was skipped",
@@ -139,13 +144,14 @@ def build_currency_block(site_conf: dict, settings: dict) -> str:
     heading = ("## Currency reference (fixed rates" +
                (f", as of {as_of}" if as_of else "") + ")")
 
+    # 添える指示は1行だけにする。換算の注意点（弱い通貨の大きな数字は小さな額である、
+    # reason にUSD換算値を書く、出力欄は元通貨のまま等）はプロンプト本文の担当であり、
+    # ここに重ねて書くと指示が食い違ったときにどちらが効くか分からなくなる。
+    # 「数値はDB・使い方はプロンプト」という切り分けをここでも守る。
     return (
         "\n\n" + heading + "\n"
         + "\n".join(lines)
-        + "\nWhen a budget is written in a currency other than USD, convert it to USD\n"
-          "with these rates before judging whether the budget fits the scope of the work.\n"
-          "These rates are approximate and are only for telling apart the rough size of\n"
-          "a budget. Do not quote a converted figure to the user as if it were exact."
+        + "\nConvert any budget that is not in USD with these rates before judging it."
     )
 
 

@@ -42,8 +42,9 @@ REVIEW_INTERVAL_MONTHS = 6
 # 通貨コードはISO 4217（英大文字3文字）。
 _CODE_RE = re.compile(r"[A-Z]{3}")
 
-# 「INR = 0.0115」「INR: 0.0115」「INR 0.0115」のいずれも受ける。
+# 「INR = 95」「INR: 95」「INR 95」のいずれも受ける。
 # JSONより打ち間違いが起きにくいため、こちらを標準の書き方にしている。
+# 値は「1 USD = N 通貨」の N（詳細は evaluate.py の SETTING_RATES 付近を参照）。
 _LINE_RE = re.compile(r"^([A-Za-z]+)\s*[=:,]?\s*([-+0-9.eE]+)$")
 
 
@@ -67,7 +68,7 @@ def _save_setting(key: str, value: str) -> None:
 
 # 新規作成時にだけ入る説明。DBを直接見た人が用途を追えるようにするため。
 _NOTE = {
-    SETTING_RATES: "対USDレート（JSON）。管理画面 /admin/settings から編集する",
+    SETTING_RATES: "為替レート（JSON）。値は 1USD が何単位になるか。管理画面 /admin/settings から編集する",
     SETTING_RATES_UPDATED: "為替レートの最終更新日。保存時に自動で入る",
 }
 
@@ -92,7 +93,8 @@ def parse_rates_input(raw: str):
             return None, ["JSON形式のようですが読み取れませんでした。"
                           "カンマ・引用符・波括弧を確認してください。"]
         if not isinstance(data, dict):
-            return None, ['JSONは {"INR": 0.0115} の形にしてください。']
+            return None, ['JSONは {"INR": 95} の形にしてください'
+                          '（値は1米ドルが何単位になるか）。']
         items = list(data.items())
     else:
         items = []
@@ -103,7 +105,8 @@ def parse_rates_input(raw: str):
             m = _LINE_RE.match(line)
             if not m:
                 return None, [f"{n}行目が読み取れません：「{line}」",
-                              "「INR = 0.0115」のように、通貨コードと数値を1行ずつ書いてください。"]
+                              "「INR = 95」のように、通貨コードと数値を1行ずつ書いてください"
+                              "（値は1米ドルが何単位になるか）。"]
             items.append((m.group(1), m.group(2)))
 
     rates, errors = {}, []
@@ -226,10 +229,13 @@ def _render(rates: dict, raw_text: str, settings: dict,
         msg_html = (f'<div class="msg {"error" if is_error else "ok"}">'
                     f'{message}</div>')
 
+    # 「1単位あたり」列は逆算した値。向きを取り違えるとここが極端な値になるため、
+    # 保存前に自分で気づける（例：INR を 0.0105 と入れると 1 INR ≒ $95 と出る）。
     rows = "".join(
         f"<tr><td style='font-family:monospace'>{esc(c)}</td>"
-        f"<td style='text-align:right;font-family:monospace'>{r:g}</td>"
-        f"<td style='color:#777'>1 {esc(c)} = {r:g} USD</td></tr>"
+        f"<td style='text-align:right;font-family:monospace'>1 USD = {r:g} {esc(c)}</td>"
+        f"<td style='text-align:right;font-family:monospace;color:#777'>"
+        f"1 {esc(c)} ≒ ${1 / r:.4g}</td></tr>"
         for c, r in sorted(rates.items())
     ) or ('<tr><td colspan="3" style="text-align:center;color:#999;padding:16px">'
           '未設定</td></tr>')
@@ -250,8 +256,13 @@ def _render(rates: dict, raw_text: str, settings: dict,
 <div class="card">
   <h2>レートの設定</h2>
   <div class="help">
-    <b>1行に1通貨、「通貨コード = 対USDレート」の形で書いてください。</b><br>
-    例：<code>INR = 0.0115</code>（1インドルピー ＝ 0.0115米ドル）<br>
+    <b>1行に1通貨、「通貨コード = 1米ドルが何単位になるか」を書いてください。</b><br>
+    例：<code>INR = 95</code>（1米ドル ＝ 95インドルピー）、
+        <code>JPY = 160</code>（1米ドル ＝ 160円）<br>
+    <b style="color:#843C0C">向きに注意：</b>「1ルピーが何ドルか」ではありません。
+    ニュースで見る「1ドル＝◯◯円」と同じ向きです。
+    逆に入れると、₹750 の案件が $71,250 として扱われます。
+    入力後は下の表の<b>「1単位あたり」列</b>で見当が合っているか確認してください。<br>
     ・通貨コードは英字3文字（INR／CAD／GBP／EUR／AUD など）<br>
     ・<code>#</code> で始まる行と空行は無視されます<br>
     ・<b>USD は書かなくて構いません</b>（1 USD = 1 USD は自明なため）<br>
@@ -261,7 +272,7 @@ def _render(rates: dict, raw_text: str, settings: dict,
   </div>
   <form method="post" action="/admin/settings/exchange-rates">
     <textarea name="rates" spellcheck="false"
-      placeholder="INR = 0.0115&#10;CAD = 0.73&#10;GBP = 1.27">{esc(raw_text)}</textarea>
+      placeholder="INR = 95&#10;JPY = 160&#10;GBP = 0.74">{esc(raw_text)}</textarea>
     <button type="submit" class="btn">保存</button>
   </form>
   <div class="note">
@@ -275,7 +286,7 @@ def _render(rates: dict, raw_text: str, settings: dict,
 <div class="card">
   <h2>現在の設定内容</h2>
   <table>
-    <thead><tr><th>通貨</th><th style="text-align:right">レート</th><th>意味</th></tr></thead>
+    <thead><tr><th>通貨</th><th style="text-align:right">設定値</th><th style="text-align:right">1単位あたり（逆算・確認用）</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
 </div>
