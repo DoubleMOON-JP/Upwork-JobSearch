@@ -26,7 +26,7 @@ import re
 from datetime import date
 
 from fastapi import APIRouter, Depends, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from database import get_conn, get_ai_settings
 from sites import SITES, site_label
@@ -255,7 +255,9 @@ def _render(rates: dict, raw_text: str, settings: dict,
     ・通貨コードは英字3文字（INR／CAD／GBP／EUR／AUD など）<br>
     ・<code>#</code> で始まる行と空行は無視されます<br>
     ・<b>USD は書かなくて構いません</b>（1 USD = 1 USD は自明なため）<br>
-    ・空欄で保存すると未設定に戻り、採点プロンプトには何も追加されなくなります
+    ・空欄で保存すると未設定に戻り、採点プロンプトには何も追加されなくなります<br>
+    ・<b>入力欄の薄い文字は記入例です。</b>保存しても値は入りません
+      （実際に入っている値は下の「現在の設定内容」で確認できます）
   </div>
   <form method="post" action="/admin/settings/exchange-rates">
     <textarea name="rates" spellcheck="false"
@@ -321,23 +323,34 @@ def build_settings_router(verify_admin) -> APIRouter:
     router = APIRouter()
 
     @router.get("/admin/settings", response_class=HTMLResponse)
-    async def settings_page(username: str = Depends(verify_admin)):
+    async def settings_page(saved: int = -1, username: str = Depends(verify_admin)):
         settings = get_ai_settings() or {}
         rates = load_rates(settings)
         broken = bool(str(settings.get(SETTING_RATES) or "").strip()) and not rates
-        return _render(
-            rates, format_rates(rates), settings,
-            message=("保存されている値が読み取れません。書き直して保存してください。"
-                     "（現在、採点プロンプトには何も追加されていません）" if broken else ""),
-            is_error=broken,
-        )
 
-    @router.post("/admin/settings/exchange-rates", response_class=HTMLResponse)
+        # 保存直後のメッセージ。保存はリダイレクトを挟むため、結果は件数として
+        # URLで受け取る（saved=-1 は通常表示、0 は未設定に戻した、1以上は保存件数）。
+        message, is_error = "", False
+        if broken:
+            message = ("保存されている値が読み取れません。書き直して保存してください。"
+                       "（現在、採点プロンプトには何も追加されていません）")
+            is_error = True
+        elif saved > 0:
+            message = (f"{saved}件のレートを保存しました。"
+                       f"次の採点から反映されます（再デプロイ不要）。")
+        elif saved == 0:
+            message = ("未設定に戻しました。採点プロンプトには何も追加されません"
+                       "（この機能を入れる前と同じ動作です）。")
+
+        return _render(rates, format_rates(rates), settings, message, is_error)
+
+    @router.post("/admin/settings/exchange-rates")
     async def save_rates(rates: str = Form(""), username: str = Depends(verify_admin)):
         parsed, errors = parse_rates_input(rates)
 
         if errors:
-            # 入力はそのまま画面に返す。打ち直しをさせないため。
+            # 誤りがあるときだけ、この場で画面を返す。入力をそのまま残して
+            # 打ち直しを避けるため（リダイレクトすると入力が消える）。
             settings = get_ai_settings() or {}
             return _render(
                 load_rates(settings), rates, settings,
@@ -346,22 +359,26 @@ def build_settings_router(verify_admin) -> APIRouter:
                 is_error=True,
             )
 
-        today = date.today().isoformat()
         if parsed:
             _save_setting(SETTING_RATES,
                           json.dumps(parsed, ensure_ascii=False, sort_keys=True))
-            _save_setting(SETTING_RATES_UPDATED, today)
-            msg = (f"{len(parsed)}件のレートを保存しました。"
-                   f"次の採点から反映されます（再デプロイ不要）。")
+            _save_setting(SETTING_RATES_UPDATED, date.today().isoformat())
         else:
             # 空欄での保存＝未設定に戻す。更新日も消し、
             # 「設定されているのに更新日だけ残っている」状態を作らない。
             _save_setting(SETTING_RATES, "")
             _save_setting(SETTING_RATES_UPDATED, "")
-            msg = ("未設定に戻しました。採点プロンプトには何も追加されません"
-                   "（この機能を入れる前と同じ動作です）。")
 
-        settings = get_ai_settings() or {}
-        return _render(load_rates(settings), rates, settings, message=msg)
+        # 保存に成功したら 303 で設定画面へ戻す。ブラウザはGETで開き直すため、
+        # URLが /admin/settings に戻り、再読み込みしても
+        # 「フォームを再送信しますか」が出ない（POSTのURLに留まらない）。
+        return RedirectResponse(f"/admin/settings?saved={len(parsed)}",
+                                status_code=303)
+
+    @router.get("/admin/settings/exchange-rates")
+    async def save_rates_get(username: str = Depends(verify_admin)):
+        """保存用URLを直接開かれた場合（履歴・ブックマーク・戻る操作）。
+        405 Method Not Allowed を見せずに設定画面へ戻す。"""
+        return RedirectResponse("/admin/settings", status_code=302)
 
     return router
