@@ -331,7 +331,7 @@
             </button>
           </div>
           <div id="evalMsg" class="msg msg-warn hidden"></div>
-          <button id="clearBtn" class="btn btn-ghost" style="width:100%; justify-content:center; margin-top:10px">Clear &amp; start a new search</button>
+          <button id="clearBtn" class="btn btn-ghost" style="width:100%; justify-content:center; margin-top:10px">Clear</button>
         </div>
       </div>
 
@@ -523,7 +523,9 @@ function collectProfile(){
   };
 }
 
-// ── クリア（新しい検索を始める） ──
+// ── クリア ──
+// 画面を空にするだけ。採点の間隔制限はサーバーが管理しているので、
+// ここでボタンの状態を触ってはいけない（触ると制限中でも押せるように見える）。
 function clearSearch(){
   $("pasteBox").value = "";
   $("evalMsg").classList.add("hidden");
@@ -531,9 +533,6 @@ function clearSearch(){
   $("results").innerHTML = "";
   $("summary").classList.add("hidden");
   $("emptyState").classList.remove("hidden");
-  clearInterval(countdownTimer);
-  $("evalBtn").disabled = false;
-  $("evalLabel").textContent = "Score these jobs";
   $("pasteBox").focus();
 }
 
@@ -570,49 +569,51 @@ async function runEvaluate(){
     let data=null; try{ data = await res.json(); }catch(e){}
 
     if(res.status === 403){ // ライセンス失効/無効
-      showEvalMsg((data && data.message) || "Your license is no longer valid.");
+      showEvalMsg((data && data.message) || "Your license is no longer valid.", "error");
       signOut(); return;
     }
     if(res.status === 429){ // レート制限 or 月間上限
       const d = (data && data.detail) || {};
       if(d.reason === "monthly_limit"){
-        showEvalMsg(`Monthly limit reached (${d.monthly_cap} evaluations). It resets next month.`);
+        showEvalMsg(`Monthly limit reached (${d.monthly_cap} evaluations). It resets next month.`, "error");
       }else{
-        showEvalMsg(d.message || "Please wait a moment before scoring again.");
-        if(d.retry_after_sec) startCountdown(d.retry_after_sec);
+        // 連打制限。ここに来た時点で採点は実行されていない。
+        // 「実行されていない」ことを最初に伝えるのが肝心（待てば結果が出る、と誤解させない）。
+        // 残り秒数はサーバーが実測値を返すので、そのまま出すだけ。
+        // 画面側でカウントダウンはしない（動くと処理中に見えるため）。
+        const sec = d.retry_after_sec;
+        showEvalMsg(
+          sec ? `Not scored — you pressed too soon. Wait about ${sec} more seconds, then press “Score these jobs” again.`
+              : (d.message || "Not scored — you pressed too soon. Wait a moment, then press “Score these jobs” again."),
+          "error");
       }
       return;
     }
     if(!res.ok || !data || data.status !== "ok"){
-      showEvalMsg((data && (data.detail || data.message)) || "Scoring failed. Try again.");
+      showEvalMsg((data && (data.detail || data.message)) || "Scoring failed. Try again.", "error");
       return;
     }
 
     lastJobs = Array.isArray(data.jobs) ? data.jobs : [];
     renderResults(data);
   }catch(err){
-    showEvalMsg("Could not reach the server. Try again.");
+    showEvalMsg("Could not reach the server. Try again.", "error");
   }finally{
     setEvalLoading(false);
   }
 }
 
+// 採点中だけボタンを止めてスピナーを出す。「画面が止まっていない」ことを示す唯一の表示。
 function setEvalLoading(on){
   const b=$("evalBtn"), l=$("evalLabel");
   b.disabled=on;
   l.innerHTML = on ? '<span class="spinner"></span> Scoring…' : 'Score these jobs';
 }
-function showEvalMsg(t){ const m=$("evalMsg"); m.textContent=t; m.classList.remove("hidden"); }
-
-let countdownTimer=null;
-function startCountdown(sec){
-  clearInterval(countdownTimer);
-  const b=$("evalBtn"), l=$("evalLabel");
-  b.disabled=true;
-  countdownTimer=setInterval(()=>{
-    sec--; l.textContent = `Wait ${sec}s`;
-    if(sec<=0){ clearInterval(countdownTimer); b.disabled=false; l.textContent="Score these jobs"; }
-  },1000);
+// level: "error" なら赤、省略時は従来どおり黄色（注意）
+function showEvalMsg(t, level){
+  const m=$("evalMsg");
+  m.textContent=t;
+  m.className = "msg " + (level === "error" ? "msg-error" : "msg-warn");
 }
 
 // ── 結果描画 ──
