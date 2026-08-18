@@ -1,59 +1,128 @@
-JobSearch ソース一式  v3.25（2026-08-18）
+JobSearch ソース一式  v3.27（2026-08-18）
 ====================================================================
 
-■ このリリースの内容：求人の取りこぼし対策（第1段階）
+■ このリリースの内容：再検索できないバグの修正（画面のみ）
 
-  変更したファイルは evaluate.py の1箇所だけ（＋APP_VERSION）。
+  変更したのは frontend/index.html の1ファイルだけ（＋APP_VERSION）。
+  サーバー側（evaluate.py / rate_limit.py / plans.py）は変更していない。
 
-  【背景】
-  同じ貼付テキスト（Upwork 30件）で3回採点したところ、
-  出力件数が 26件 / 29件 / 15件 とばらついた。
-  落ちた求人を調べると、点数と強く相関していた。
+  ※ v3.26 は欠番。求人の取りこぼし追加対策（似た求人の重複判定）は
+    保留中で、このパッケージには入っていない。中身は v3.25 と同じ。
 
-      3回目で残った15件   … 平均 60.3点
-      3回目で落ちた14件   … 平均 15.4点
-      3回とも落ちた求人   … Inventory Tracking Database with QR Codes
 
-  つまりランダムな取りこぼしではなく、AIが「プロフィールに合わない求人は
-  出さなくてよい」と判断して省いていた。
+■ 何が起きていたか
 
-  【原因と考えられる箇所】
-  従来の指示は次の3行だった。
+  「Clear & start a new search」を押した直後に検索すると、
+  「Wait 26s」と表示されるのに結果が出ない。
+  もう一度押すと、少し待って結果が出る。
 
-      Split this into individual job postings. IGNORE anything that is not a job
-      (…noise…).
-      For EACH job, extract its fields and score it against the profile.
+  原因は2つ重なっていた。
 
-  「IGNORE anything that is not a job」は本来ヘッダー・広告の除外を指すが、
-  「合わない求人＝出さなくてよい」と拡大解釈される余地があった。
+  【1】Clear がサーバーの制限を無視して画面を「押せる」状態に戻していた
 
-  【変更内容】
-  ノイズ除去の指示は残したまま、直後に Completeness セクションを追加した。
+      採点は同じライセンスで120秒に1回まで（plans.py RATE_LIMIT_SECONDS）。
+      ところが clearSearch() が
 
-      ## Completeness (STRICT)
-      Output EVERY job posting you find. This rule overrides any tendency
-      to be concise.
-      - A real job posting is never "not a job", however irrelevant, low-paid,
-        vague or badly written it is. Irrelevance is not a reason to leave it
-        out: give it a low score and still return it.
-      - Do NOT return only the best matches, only the top few, or a shortened
-        selection. There is no upper limit on how many jobs you may return.
-      - Do NOT merge two separate postings into one entry.
-      - Never invent a job that is not present in the text.
+          clearInterval(countdownTimer);
+          $("evalBtn").disabled = false;
+          $("evalLabel").textContent = "Score these jobs";
 
-  あわせて、除外対象に adverts / promoted banners / related searches /
-  category lists を明記した（求人一覧には実質広告が混ざるため）。
+      を実行していたため、制限中でもボタンが押せる見た目に戻っていた。
+      サーバー側の120秒は当然そのまま残っている。
 
-  【効果の測り方】
-  同じ貼付テキスト（sha256 34be63c5…、30件）でもう3回採点する。
-      3回とも30件そろう  → 対策完了
-      まだ落ちる          → 第2段階（件数をプログラムで数えてAIに渡す）へ
+  【2】429を受けた時、カウントダウンの無効化が finally に打ち消されていた
 
-  ※ 第2段階は固定値ではなく、貼付テキストから毎回数える方式にする。
-    最終ページで件数が少ない場合にも対応するため。
-    また数え間違いで新たな取りこぼしを作らないよう、
-    「ちょうどN件」ではなく「少なくともN件」と伝える設計とする。
+      runEvaluate() は
 
+          setEvalLoading(true);
+          try{
+            ... 429なら startCountdown() でボタンを無効化して return
+          } finally { setEvalLoading(false); }   ← 必ず後に走る
+
+      という構造だった。JavaScript では try の中で return しても
+      finally が後から実行されるため、startCountdown() の無効化が
+      即座に打ち消される。結果、
+
+          ・ボタンは押せるまま
+          ・ラベルだけが「Wait 30s」「Wait 29s」…と動く
+
+      という状態になり、「処理中だから待てば結果が出る」と見えていた。
+      実際にはサーバーは429を返しており、採点は1度も実行されていない
+      （Gemini も呼ばれず、月間回数も消費されていない）。
+
+      実機のスクリーンショットでは、finally の直後・最初の1目盛りが
+      来る前の瞬間（メッセージは「Please wait 9 seconds」なのに
+      ボタンは「Score these jobs」で押せる状態）が写っていた。
+
+
+■ どう直したか
+
+  カウントダウンという仕組みごと削除した。追加ではなく削除で直している。
+
+  【削除】
+      ・startCountdown() 関数
+      ・countdownTimer 変数
+      ・ボタンのラベルが「Wait NNs」に変わる動き
+      ・clearSearch() の3行（clearInterval / disabled / textContent）
+
+  【変更】
+      ・「Clear & start a new search」→「Clear」
+        押しても検索は始まらない。文言が動作と食い違っていた。
+      ・連打制限のメッセージを、実行されていないことが先に伝わる文にした。
+        黄色（注意）から赤（エラー）に変更。
+
+            Not scored — you pressed too soon.
+            Wait about 31 more seconds, then press "Score these jobs" again.
+
+        残り秒数はサーバーが実測値（retry_after_sec）を返すので、
+        それをそのまま1回表示するだけ。画面側では数えない。
+
+  【変更なし】
+      ・採点中のスピナー「Scoring…」
+        これが「画面が止まっていない」ことを示す唯一の表示。
+        今まではカウントダウンに上書きされて見えにくかった。
+      ・月間上限のメッセージ
+      ・サーバー側のすべて
+
+
+■ 画面側に「120秒」を書かなかった理由
+
+  「2分に1回です」と画面に書くと、plans.py の RATE_LIMIT_SECONDS と
+  同じ値を2箇所で持つことになり、将来この値を変えたときに食い違う。
+  実際に押せばサーバーが正確な残り秒数を返すので、それを表示している。
+
+  もし「2分に1回」という文言を出したくなった場合は、画面に直書きせず、
+  rate_limit.py の429応答に間隔の値を足して画面へ渡すこと。
+
+
+■ 検証済みの内容（v3.27）
+
+  index.html の <script> をそのまま取り出し、DOMを模した環境で実行した。
+
+  ・連打制限に当たった時：ボタンはすぐ押せる状態に戻り、ラベルは
+    「Score these jobs」のまま。Wait 表記もスピナーも出ない
+  ・1.2秒後も表示が変わらない（タイマーが残っていないことの確認）
+  ・メッセージが「Not scored」で始まり、赤で出る
+  ・制限中に Clear を押しても、ボタンの状態を触らない
+  ・採点成功時：結果が描画され、ボタンが戻る
+  ・採点中：ボタンが無効になり、スピナーと Scoring… が出る
+  ・月間上限のメッセージは従来どおり
+  ・貼付欄が空のまま押した時は従来どおり黄色の注意
+  ・JS構文エラーなし（node --check）
+  ・JSが参照するID 30件がすべてHTML側に存在する
+  ・サーバーが差し込むプレースホルダ6種がすべて残っている
+  ・CSV出力の先頭BOM（U+FEFF）が実行時に出ることを確認
+    （Excelで開いた時の文字化け防止。書き換えで壊していない）
+
+
+■ 差し替え方
+
+  frontend/index.html をリポジトリの同じファイルと入れ替える。
+  リポジトリでルート直下に index.html を置いている場合は、そちらを
+  入れ替えること（main.py は frontend/index.html → index.html の順で探す）。
+
+  デプロイ後の確認は /health のコミットハッシュで行う。
+  APP_VERSION も 3.27.0 に上げてある。
 
 ■ main.py に残っているもの（16ルート）
 
@@ -82,10 +151,11 @@ JobSearch ソース一式  v3.25（2026-08-18）
   evaluate.py         サーバー側 Gemini 採点                        471行  ← 変更
   sites.py            対応求人サイト定義                            140行
   requirements.txt    依存パッケージ
+  frontend/index.html 利用者向け採点画面                        ← 変更
 
   ※ 同梱していない（この期間に変更していない）ファイル
      database.py / db_redesign.py / rate_limit.py / payments.py /
-     plans.py / mailer.py / runtime.txt / frontend/ 配下
+     plans.py / mailer.py / runtime.txt / frontend/ の index.html 以外
 
 
 ■ 画面モジュールと権限の対応
