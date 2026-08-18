@@ -1,48 +1,85 @@
-JobSearch ソース一式  v3.21（2026-08-18 時点）
+JobSearch ソース一式  v3.22（2026-08-18）
 ====================================================================
 
-このZIPには、本番にデプロイ済みのファイルがそのまま入っています。
-展開してGitHubへ上げれば、現在の本番と同じ状態になります。
-（ファイル名は本番と同じです。リネームは不要です）
+■ このリリースの内容：main.py の分割（第1段階）
+
+  main.py が2,573行まで大きくなり、画面を1つ直すたびに
+  アプリ本体を触る状態になっていたため、画面を独立ファイルへ切り出す。
+
+  今回はライセンス一覧を切り出した。あわせて、以後の画面を
+  同じ形で切り出せるよう、共通部品を admin_ui.py に独立させた。
+
+      main.py            2,573行 → 1,896行（-677行）
+      admin_ui.py        新規 238行   画面共通の部品
+      admin_licenses.py  新規 541行   ライセンス一覧＋操作API
+
+  ※ 機能の変更は一切ない。画面のHTMLは1文字も変えていない。
 
 
 ■ 同梱ファイル
 
-  main.py             FastAPIアプリ本体・管理画面
-  evaluate.py         サーバー側 Gemini 採点（POST /evaluate）
+  main.py             FastAPIアプリ本体・管理トップ・紹介リンク管理ほか
+  admin_ui.py         管理画面の共通部品          ← v3.22 で新規
+  admin_licenses.py   ライセンス一覧＋操作API      ← v3.22 で新規
+  settings_admin.py   AI設定（為替レート）の画面   ← v3.20 で新規
+  evaluate.py         サーバー側 Gemini 採点
   sites.py            対応求人サイト定義
-  settings_admin.py   AI設定（為替レート）の管理画面   ← v3.20 で新規
   requirements.txt    依存パッケージ
 
-  ※ 同梱していないファイル（この期間に変更していないもの）
+  ※ 同梱していない（この期間に変更していない）ファイル
      database.py / db_redesign.py / rate_limit.py / payments.py /
      plans.py / mailer.py / runtime.txt / frontend/ 配下
 
 
-■ v3.19 からの変更点
+■ 画面を切り出すときの型（次の画面も同じ形で足せる）
 
-  1. 為替レートをプロンプトからDBへ移設（v3.20）
-     ・レートの数値は ai_settings の exchange_rates に一本化
-     ・換算が要るサイトかは sites.py の multi_currency で判定
-     ・管理画面 /admin/settings を新設（settings_admin.py）
-     ・値の向きは「1 USD = N 通貨」
+  1. 画面モジュールを作り、module直下に router = APIRouter() を置く
+  2. 認証は main.py から関数を受け取る（循環importを避けるため）
 
-  2. /health にデプロイ版数と実コミットを表示（v3.21）
-     ・APP_VERSION（宣言値）と GIT_COMMIT（RENDER_GIT_COMMIT）に分離
-     ・デプロイが反映されたかを /health だけで判定できる
+        _verify_any = None
+        def build_xxx_router(verify_any):
+            global _verify_any
+            _verify_any = verify_any
+            return router
+        def verify(credentials = Depends(security)):
+            return _verify_any(credentials)
 
-  3. polar-sdk のバージョンを 0.9.3 に固定（v3.21）
-     ・9月6日の初回更新課金テストの直前に変動させないため
+  3. main.py の末尾に2行足す
+
+        from admin_xxx import build_xxx_router
+        app.include_router(build_xxx_router(verify_any))
+
+  4. 共通で使うもの（UI_TEXT / esc / ui_text / plan_label_ui）は
+     admin_ui.py から import する。admin_ui.py は何もimportしないため、
+     どこから読んでも循環参照にならない。
+
+  【重要】コードを移すときに再インデントしないこと。
+  画面のHTMLは f-string で書かれており、インデントを変えると
+  文字列の中身が変わってしまう。そのため router 方式にしている。
 
 
-■ リリースのたびに更新が必要な箇所
+■ 残りの分割候補（未着手）
 
-  main.py の APP_VERSION（1行のみ）。
-  更新を忘れても commit は必ず変わるため、致命的ではありません。
+      /admin 管理トップ        548行
+      /admin/referrals        262行 + API 90行程度
+      /staff スタッフ画面      155行
+      プロンプト編集画面        111行
+
+  すべて切り出すと main.py は約900行になる見込み。
 
 
-■ 注意
+■ 検証済みの内容（v3.22）
 
-  ・evaluate.py は全サイト共通です。触ったらUpworkの回帰テストを行うこと。
-  ・main.py のHTMLはf-stringです。波括弧は {{ }} にすること。
+  ・ルート46本が変更前後で完全に一致（消失・重複なし）
+  ・未定義の名前なし（3ファイルとも静的解析で確認）
+  ・移動した475行のうち変更は16行のみ。すべて @app.→@router. と
+    Depends(verify_any)→Depends(verify) の置換。HTMLの変更は0行
+  ・スタブ環境で import し、ルーター8本の組み立てと認証注入を確認
+
+
+■ 注意（従来から変わらず）
+
+  ・evaluate.py は全サイト共通。触ったらUpworkの回帰テストを行うこと。
+  ・main.py と各画面モジュールのHTMLは f-string。波括弧は {{ }} にすること。
   ・polar-sdk は 2026-09-06 の更新課金テストが終わるまで上げないこと。
+  ・リリースのたびに main.py の APP_VERSION を更新する（1行のみ）。
