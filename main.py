@@ -1131,6 +1131,18 @@ async def admin_page(username: str = Depends(verify_admin)):
     </table>
   </div>
 
+  <!-- AI設定（為替レート） -->
+  <div class="card">
+    <h2>💱 AI設定（為替レート）</h2>
+    <p style="font-size:12px;color:#777;margin-bottom:12px">
+      複数通貨が混在するサイトの採点に使う、対USDの為替レートです。
+      対応サイトが増えても、レートを持つ場所はここ1か所のままです。
+      保存すると再デプロイなしで次の採点から反映されます。
+    </p>
+    <a href="/admin/settings" class="btn btn-blue"
+       style="text-decoration:none;display:inline-block">為替レートを開く →</a>
+  </div>
+
   <!-- 広告欄設定 -->
   <div class="card">
     <h2>📣 広告欄（結果画面の上に表示）</h2>
@@ -2514,3 +2526,20 @@ async def admin_activate_file(file_id: int, username: str = Depends(verify_admin
 @app.delete("/admin/file/{file_id}")
 async def admin_delete_file(file_id: int, username: str = Depends(verify_admin)):
     return delete_file(file_id)
+
+
+# ══════════════════════════════════════════
+# AI設定（為替レート）の管理画面
+# ══════════════════════════════════════════
+# 画面とルートは settings_admin.py に置いている。main.py は既に2500行を超えており、
+# ここに画面を足すと以後この巨大なファイルを触り続けることになるため。
+#
+# verify_admin を引数で渡しているのは循環importを避けるため。
+# main.py が settings_admin を import するので、逆向きには import できない。
+# 引数で渡せば、認証の実装は main.py の1か所のままにできる。
+#
+# ファイル末尾に置いているのは、verify_admin の定義より後である必要があるため
+# （関数そのものを渡すので、定義済みでなければならない）。
+from settings_admin import build_settings_router
+
+app.include_router(build_settings_router(verify_admin))
