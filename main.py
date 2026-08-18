@@ -58,9 +58,27 @@ from evaluate import router as evaluate_router  # 採点API: POST /evaluate
 from payments import router as payments_router  # 決済Webhook: POST /webhook/{provider}
 
 # ══════════════════════════════════════════
+# 版数とデプロイの識別
+# ══════════════════════════════════════════
+# APP_VERSION は「宣言した版数」。リリースのたびにこの1行だけを更新する。
+# v3.9 以降ずっと 3.8.0 のまま放置され、デプロイ確認の役に立たなくなっていた。
+#
+# GIT_COMMIT は「実際に動いているコード」。Render がデプロイごとに設定する
+# 環境変数から取るため、APP_VERSION の更新を忘れても必ず変わる。
+# 「新しいコードが本当に載ったか」はこちらで判定する。
+# 環境変数が無い場合（ローカル起動など）は "unknown" を返す。
+# ここが "unknown" のままなら、環境変数名が違うということ。
+APP_VERSION = "3.20.0"
+GIT_COMMIT = (
+    os.environ.get("RENDER_GIT_COMMIT")
+    or os.environ.get("GIT_COMMIT")
+    or ""
+)[:7] or "unknown"
+
+# ══════════════════════════════════════════
 # 初期化
 # ══════════════════════════════════════════
-app = FastAPI(title="JobSearch API", version="3.8.0")
+app = FastAPI(title="JobSearch API", version=APP_VERSION)
 init_db()
 migrate()   # リデザイン: subscription_id/provider 列・usage_tracking 表を用意（既適用でも安全）
 
@@ -544,7 +562,17 @@ async def thanks_page():
 
 @app.get("/health")
 async def health():
-    return {"service": "JobSearch API", "version": "3.8.0", "status": "running"}
+    """稼働確認。障害検知（対応予定 No.5）の監視先としても使う想定。
+
+    commit はデプロイのたびに変わるため、デプロイが反映されたかを
+    ここだけで判定できる。version の更新漏れに影響されない。
+    """
+    return {
+        "service": "JobSearch API",
+        "version": APP_VERSION,
+        "commit":  GIT_COMMIT,
+        "status":  "running",
+    }
 
 
 # ── 広告欄 ──
