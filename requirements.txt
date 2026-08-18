@@ -6,8 +6,17 @@ python-dateutil==2.9.0
 psycopg2-binary==2.9.10
 python-multipart==0.0.12
 
-# polar-sdk は決済Webhookを実装する段階で追加する。
+# polar-sdk は決済Webhook用。
 # （payments.py は polar_sdk を関数内で遅延importするため、未インストールでもサーバーは起動し
 #   /evaluate・フロントは動作する。実際に /webhook/polar を叩くときだけ必要）
-# 追加する際は Python を 3.12 に固定した状態で:
-polar-sdk
+#
+# 【バージョンを固定している理由】2026-08-18 に固定。
+# それまで指定が無く、再デプロイのたびに最新版が入る状態だった。
+# コードを1行も変えていないのに決済まわりの動作が変わりうるため、
+# 本番で動作している 0.9.3 に固定した（Render Shell の pip show で確認）。
+#
+# 【既知の制約】0.9.3 は order.paid を解釈できない（pydantic の union_tag_invalid）。
+# payments.py が生JSONへフォールバックして処理するため実害はない。
+# 更新するとモデル構造が変わる可能性があるので、上げるときは必ず決済の再テストを行うこと。
+# 特に 2026-09-06 の初回更新課金テストの前後では変更しないこと。
+polar-sdk==0.9.3
