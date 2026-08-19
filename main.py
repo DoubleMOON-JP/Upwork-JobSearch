@@ -54,7 +54,7 @@ from payments import router as payments_router  # 決済Webhook: POST /webhook/{
 # 「新しいコードが本当に載ったか」はこちらで判定する。
 # 環境変数が無い場合（ローカル起動など）は "unknown" を返す。
 # ここが "unknown" のままなら、環境変数名が違うということ。
-APP_VERSION = "3.27.0"
+APP_VERSION = "3.28.0"
 GIT_COMMIT = (
     os.environ.get("RENDER_GIT_COMMIT")
     or os.environ.get("GIT_COMMIT")
@@ -468,6 +468,28 @@ async def download_excel():
 
 
 # （リデザインで Chrome拡張は廃止したため /download/extension は削除）
+
+
+# ══════════════════════════════════════════
+# 静的ファイル（LPの紹介動画・ポスター画像）
+# ══════════════════════════════════════════
+# frontend/static/ の中身を /static/ で配信する。
+#
+# 自前でファイルを読んで返さず StaticFiles を使う理由：
+#   動画は Range リクエスト（部分取得）に対応している必要がある。
+#   対応していないと、シークバーを動かすたびに先頭から取り直しになる。
+#   StaticFiles はこれを標準で処理する。
+#
+# check_dir=False にしているのは、frontend/static/ が無い環境でも
+# 起動だけは通るようにするため。無い場合は /static/... が404になるだけで、
+# 他の画面は従来どおり動く。
+from fastapi.staticfiles import StaticFiles
+
+app.mount(
+    "/static",
+    StaticFiles(directory="frontend/static", check_dir=False),
+    name="static",
+)
 
 
 
