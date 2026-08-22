@@ -29,8 +29,8 @@ SITES = {
         # ため、開いた直後に全選択すると2〜3件しかコピーされない。しかもエラーは
         # 出ず「求人が少なかった」ようにしか見えないので、利用者は原因に気づけない。
         "paste_placeholder": (
-            "Go to Upwork's job search page (not Saved Jobs or Invites) and sort by "
-            "\"Most Recent\". Scroll to the bottom and wait until every listing has "
+            "Go to Upwork's job search page (not Saved Jobs or Invites) and pick the "
+            "\"Best matches\" or \"Most recent\" tab. Scroll to the bottom and wait until every listing has "
             "loaded — Upwork loads them a few at a time, and anything not yet on "
             "screen will not be copied. Then press Ctrl/⌘+A to select the page and "
             "Ctrl/⌘+C to copy. Paste it here — multiple pages are fine, noise is ignored."
