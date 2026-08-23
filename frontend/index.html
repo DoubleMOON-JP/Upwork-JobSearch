@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>JobSearch — AI job triage</title>
+<title>MOONpicker — AI job triage</title>
 
 <!-- 同一オリジンのFastAPIが配信する前提。別ホストで配信する場合は下の API_BASE を変更 -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -224,7 +224,7 @@
 <header>
   <div class="brand">
     <span class="spark">⚡</span>
-    <h1><a href="/" style="color:inherit;text-decoration:none">JobSearch</a></h1>
+    <h1><a href="/" style="color:inherit;text-decoration:none">MOONpicker</a></h1>
     <span class="tag">AI job triage</span>
   </div>
   <span id="licChip" class="lic-chip hidden"></span>
@@ -632,7 +632,7 @@ function renderResults(data){
 
   // コスト確認用：実測トークン数はコンソールにだけ出す（画面は汚さない）
   if(data.token_usage){
-    console.log("[JobSearch] token usage:", data.token_usage);
+    console.log("[MOONpicker] token usage:", data.token_usage);
   }
 
   // summary
