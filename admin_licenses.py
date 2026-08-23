@@ -189,7 +189,7 @@ async def admin_licenses_page(
 <html lang="{'en' if EN else 'ja'}">
 <head>
   <meta charset="UTF-8">
-  <title>{T['lic_title']} - JobSearch</title>
+  <title>{T['lic_title']} - MOONpicker</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: Arial, sans-serif; background: #F5F7FA; color: #1A1A1A; font-size: 13px; }}

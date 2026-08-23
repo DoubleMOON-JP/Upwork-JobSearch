@@ -75,7 +75,7 @@ async def staff_page(who: dict = Depends(verify)):
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Staff Console - JobSearch</title>
+  <title>Staff Console - MOONpicker</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: Arial, sans-serif; background: #F5F7FA; color: #1A1A1A; font-size: 13px; }}
@@ -108,7 +108,7 @@ async def staff_page(who: dict = Depends(verify)):
 </head>
 <body>
 <div class="header">
-  <h1>⚡ JobSearch — Staff Console</h1>
+  <h1>⚡ MOONpicker — Staff Console</h1>
   <span style="font-size:11px;opacity:0.8">
     {esc(who.get('display_name') or '')} ({role_en})
   </span>

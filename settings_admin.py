@@ -242,7 +242,7 @@ def _render(rates: dict, raw_text: str, settings: dict,
 
     return HTMLResponse(f"""<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8">
-<title>AI設定（為替レート） - JobSearch</title>
+<title>AI設定（為替レート） - MOONpicker</title>
 <style>{_STYLE}</style></head><body>
 <div class="container">
 

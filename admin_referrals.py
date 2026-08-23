@@ -216,7 +216,7 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify)):
     html = f"""<!DOCTYPE html>
 <html lang="{'en' if EN else 'ja'}"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>{T['ref_title']} - JobSearch</title>
+<title>{T['ref_title']} - MOONpicker</title>
 <style>
 * {{ box-sizing: border-box; }}
 body {{ font-family: "Segoe UI", "Hiragino Sans", sans-serif; background: #F0F4F8;

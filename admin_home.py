@@ -212,7 +212,7 @@ async def admin_page(username: str = Depends(verify)):
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>管理者画面 - JobSearch</title>
+  <title>管理者画面 - MOONpicker</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: Arial, sans-serif; background: #F5F7FA; color: #1A1A1A; font-size: 13px; }}
@@ -251,7 +251,7 @@ async def admin_page(username: str = Depends(verify)):
 </head>
 <body>
 <div class="header">
-  <h1>⚡ JobSearch — 管理者画面</h1>
+  <h1>⚡ MOONpicker — 管理者画面</h1>
   <span style="font-size:11px;opacity:0.7">{datetime.now().strftime('%Y/%m/%d %H:%M')}</span>
 </div>
 

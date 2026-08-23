@@ -1,5 +1,5 @@
 """
-main.py - JobSearch 本番サーバー v3.8（マルチ求人サイト対応）
+main.py - MOONpicker 本番サーバー v3.8（マルチ求人サイト対応）
 ライセンス認証＋プロンプト/セレクター配信型
 """
 import os
@@ -54,7 +54,7 @@ from payments import router as payments_router  # 決済Webhook: POST /webhook/{
 # 「新しいコードが本当に載ったか」はこちらで判定する。
 # 環境変数が無い場合（ローカル起動など）は "unknown" を返す。
 # ここが "unknown" のままなら、環境変数名が違うということ。
-APP_VERSION = "3.28.0"
+APP_VERSION = "3.30.0"
 GIT_COMMIT = (
     os.environ.get("RENDER_GIT_COMMIT")
     or os.environ.get("GIT_COMMIT")
@@ -64,7 +64,7 @@ GIT_COMMIT = (
 # ══════════════════════════════════════════
 # 初期化
 # ══════════════════════════════════════════
-app = FastAPI(title="JobSearch API", version=APP_VERSION)
+app = FastAPI(title="MOONpicker API", version=APP_VERSION)
 init_db()
 migrate()   # リデザイン: subscription_id/provider 列・usage_tracking 表を用意（既適用でも安全）
 
@@ -199,7 +199,7 @@ async def root():
     # トップページ: 全サービス共通のハブ。各ジョブサイト向けLPへの入口。
     return _serve_html(
         "frontend/hub.html", "hub.html",
-        fallback="<h1>JobSearch</h1><p>hub.html not found.</p>",
+        fallback="<h1>MOONpicker</h1><p>hub.html not found.</p>",
         status=200,
     )
 
@@ -288,7 +288,7 @@ async def app_page(site: str):
             return HTMLResponse(content=html)
 
     return HTMLResponse(
-        content="<h1>JobSearch</h1><p>frontend (index.html) not found.</p>",
+        content="<h1>MOONpicker</h1><p>frontend (index.html) not found.</p>",
         status_code=200,
     )
 
@@ -333,7 +333,7 @@ async def health():
     ここだけで判定できる。version の更新漏れに影響されない。
     """
     return {
-        "service": "JobSearch API",
+        "service": "MOONpicker API",
         "version": APP_VERSION,
         "commit":  GIT_COMMIT,
         "status":  "running",

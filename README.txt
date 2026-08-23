@@ -1,149 +1,115 @@
-JobSearch ソース一式  v3.29（2026-08-22）
-====================================================================
+moonpicker_v3_30_20260823.zip
+============================================================
+製品名変更リリース v3.30.0（JobSearch → MOONpicker）
+作成日: 2026-08-23
+============================================================
 
-■ このリリースの内容：2件
+■ このリリースでやったこと（1つだけ）
+  サイト内の表示文字列 "JobSearch" を "MOONpicker" に置換した。
+  46か所。大文字小文字を区別した完全一致置換のみ。
+  それ以外の変更は main.py の APP_VERSION 1行のみ。
 
-  【1】貼り付け手順の文言修正（sites.py）
-       Upwork の案内に "Best matches" が抜けていた。
-       あわせて実物のタブ表記（小文字）と操作（タブを選ぶ）に合わせた。
+■ 変更内容
+  1) "JobSearch" → "MOONpicker"  ... 46か所 / 14ファイル
+  2) APP_VERSION "3.28.0" → "3.30.0"  ... main.py 1か所
 
-  【2】LPに og:image を追加（HTML 3ファイル）
-       SNSでリンクを貼ったときに、カードへ画像が入るようにする。
+  ※ 3.29.0 ではなく 3.30.0 にした理由:
+     v3.29（sites.py + og:image）は main.py を同梱しなかったため
+     APP_VERSION が 3.28.0 のまま本番に出ている。
+     今回は v3.29 の後の新しいリリースなので 3.30.0 とし、
+     欠番を作らずに版数を進める。
+     デプロイ後 /health の version が 3.30.0 になれば反映確認できる。
 
+■ 同梱ファイル（14）
+  main.py                        5か所 + APP_VERSION
+  mailer.py                      8か所  ★顧客のメールに出る
+  admin_home.py                  2か所
+  admin_licenses.py              1か所
+  admin_referrals.py             1か所
+  settings_admin.py              1か所
+  staff_console.py               2か所
+  frontend/index.html            3か所
+  frontend/hub.html              4か所
+  frontend/campaign.html         5か所
+  frontend/landing_upwork.html   4か所
+  frontend/landing_freelancer.html 4か所
+  frontend/privacy.html          4か所
+  frontend/thanks.html           2か所
 
-■ 変更したファイルと差分（合計5行の追加、2行の削除）
+■ 同梱していないファイル（変更なし・アップ不要）
+  sites.py, plans.py, database.py, db_redesign.py, payments.py,
+  evaluate.py, rate_limit.py, admin_prompts.py, admin_ui.py,
+  requirements.txt, runtime.txt, .gitignore
+  → いずれも "JobSearch"（大文字小文字一致）を含まないため。
 
-  sites.py                        追加 2 行 / 削除 2 行
-  frontend/hub.html               追加 1 行 / 削除 0 行
-  frontend/landing_upwork.html    追加 1 行 / 削除 0 行
-  frontend/landing_freelancer.html 追加 1 行 / 削除 0 行
+■ 変更していないもの（意図的に残した）
+  ・ドメイン  jobsearch.doublemoon.biz        12か所
+    → 2026-09-06 の Polar 課金テスト完了後に moonpicker.com へ移行する。
+      先に変えると決済・ライセンス配信が壊れる。
+  ・メールアドレス
+      jobsearch_support@doublemoon.biz  17か所
+      js_license@doublemoon.biz          3か所
+      js_campaign@doublemoon.biz         3か所
+    → メールボックスの実体があるため、ドメイン移行と同時に扱う。
+  ・ブラウザ保存キー（変えると既存利用者のライセンスが消える）
+      ujs_license / ujs_profile / ujs_privacy_agreed / js_ref
+  ・ライセンスキー接頭辞 DMJS（database.py）
+    → 発行済みキーが無効になるため恒久的に変更しない。
+  ・画像/動画ファイル名 jobsearch_demo*（9か所）
+    → 動画の再作成時にまとめて扱う。
+  ・upwork.doublemoon.biz（旧ドメイン・引継ぎメモ §9 で変更禁止）
 
-  【重要】GitHubでコミットするとき、差分が上記のとおりであることを
-  確認してください。それ以外の行が出たら適用しないでください。
+■ 検証（すべて実行済み・結果は下記のとおり）
+  1) 置換件数            46件（事前カウントと一致）
+  2) 残存 "JobSearch"    0件
+  3) "MOONpicker" 出現   46件
+  4) 行数                全23ファイルで置換前後 完全一致（増減なし）
+  5) バイト数            +46（9文字→10文字 × 46か所と一致）
+  6) ast.parse()         .py 16ファイル 全て PASS
+  7) node --check        HTML内 <script> 4ブロック（index / landing_upwork /
+                         landing_freelancer / thanks）全て PASS
+                         ※ campaign / hub / privacy にスクリプトは無い
+  8) 不変文字列の出現数（置換前 → 置換後、全て一致）
+       ujs_privacy_agreed                2 → 2
+       ujs_license                       4 → 4
+       ujs_profile                       2 → 2
+       js_ref                           17 → 17
+       DMJS                              4 → 4
+       jobsearch.doublemoon.biz         12 → 12
+       jobsearch_support@doublemoon.biz 17 → 17
+       js_license@doublemoon.biz         3 → 3
+       js_campaign@doublemoon.biz        3 → 3
+       jobsearch_demo                    9 → 9
+       upwork.doublemoon.biz             3 → 3
+       Double Moon Job Search            1 → 1
+  9) サーバ側プレースホルダ（index.html）
+       {{SITE_ID}} {{SITE_LABEL}} {{CSV_FILENAME}}
+       {{PASTE_HEADING}} {{PASTE_PLACEHOLDER}} {{PASTE_TIP}}
+       いずれも 1 → 1 で無傷
+ 10) CSV の BOM 指定 "﻿"（index.html）  1 → 1 で無傷
 
+■ Render の環境変数について（コード変更の効き方）
+  MAIL_FROM_NAME   … 未設定 → mailer.py の既定値が生きている。
+                      よって今回のコード変更で差出人名が
+                      "JobSearch" → "MOONpicker" に実際に変わる。
+  SUPPORT_EMAIL    … 未設定 → 既定値 jobsearch_support@ が生きている（今回は据置）
+  MAIL_FROM        … 未設定 → SMTP_USER（js_license@）にフォールバック（今回は据置）
+  BASE_URL         … 設定済み https://jobsearch.doublemoon.biz
+                      → 今回は触らない。2026-09-06 以降に変更する。
 
-■ 【1】sites.py の変更（1箇所）
+■ デプロイ後の確認手順
+  1) /health の version が "3.30.0"、service が "MOONpicker API"
+  2) /            … hub のロゴが MOONpicker
+  3) /for/upwork  … タイトルとヘッダーが MOONpicker
+  4) /app/upwork  … ヘッダーが MOONpicker、貼り付け→採点が通ること
+                    （ライセンスが残っていること＝保存キー無傷の確認）
+  5) /privacy     … Service 欄が MOONpicker
+  6) /admin, /staff … タイトルとヘッダーが MOONpicker
 
-  SITES["upwork"]["paste_placeholder"] の冒頭2行だけを差し替えた。
-
-  変更前
-      "Go to Upwork's job search page (not Saved Jobs or Invites) and sort by "
-      "\"Most Recent\". Scroll to the bottom and wait until every listing has "
-
-  変更後
-      "Go to Upwork's job search page (not Saved Jobs or Invites) and pick the "
-      "\"Best matches\" or \"Most recent\" tab. Scroll to the bottom and wait until every listing has "
-
-  結合後の実値（貼り付け欄に出る文言）
-
-      Go to Upwork's job search page (not Saved Jobs or Invites) and pick the
-      "Best matches" or "Most recent" tab. Scroll to the bottom and wait until
-      every listing has loaded — Upwork loads them a few at a time, and anything
-      not yet on screen will not be copied. Then press Ctrl/⌘+A to select the
-      page and Ctrl/⌘+C to copy. Paste it here — multiple pages are fine,
-      noise is ignored.
-
-  ● なぜ直したか
-
-    1. "Best matches" が抜けていた。実際には Best matches / Most recent の
-       どちらでも使える。案内が片方しか示していなかった。
-
-    2. 表記が実物と違っていた。Upworkの実物は "Most recent"（小文字r）。
-       文言は "Most Recent"（大文字R）だった。
-
-    3. 「sort by（並べ替え）」ではなく、実際は「タブを選ぶ」操作。
-       直前の (not Saved Jobs or Invites) も同じタブ列を指しているので、
-       「タブを選ぶ」と書いたほうが文全体として筋が通る。
-
-  ● 変えていないもの
-
-    ・paste_tip（貼り付け欄の下の補足）… ソート順の記述が無いため変更不要
-    ・prompt_noise_hint / trim_start_after / trim_end_before / multi_currency
-    ・csv_filename / prompt_source_label / label / paste_heading / enabled
-    ・freelancer の定義すべて
-    ・4つの関数（is_valid_site / get_site / site_label / enabled_sites）
-
-  ● 検証済みの内容
-
-    ・assert old in s and s.count(old)==1 のガードを通した
-    ・ast.parse() で構文エラーなし
-    ・新旧の SITES を実際に実行して機械的に比較し、
-      upwork.paste_placeholder 以外の全キーが2サイトとも一致することを確認
-    ・行数は 139 行のまま変わっていない
-
-
-■ 【2】og:image の追加（HTML 3ファイル・各1行）
-
-  各ファイルの <head> の og:url の直後に、次の1行を追加した。
-
-      <meta property="og:image" content="https://jobsearch.doublemoon.biz/static/jobsearch_demo_poster.jpg" />
-
-  3ファイルとも同じURL。画像は既に /static/ で配信されているので、
-  ファイルの追加は不要。
-
-  ● なぜ必要か
-
-    og:image が無いと、SNSでリンクを貼ったときにカードが画像なしになる。
-    LinkedIn の Featured セクションで実際に灰色のカードになることを確認した。
-    素材は既存のデモ動画のポスター画像（86KB）をそのまま使う。
-
-  ● 変えていないもの
-
-    3ファイルとも、追加した1行以外は1文字も変更していない。
-    CSS・本文・価格・FAQ・フッター・紹介コードのスクリプトはすべて元のまま。
-
-
-■ 同梱していないファイル（この期間に変更していない）
-
-  main.py / evaluate.py / database.py / db_redesign.py / rate_limit.py /
-  payments.py / plans.py / mailer.py / admin_*.py / staff_console.py /
-  settings_admin.py / requirements.txt / runtime.txt /
-  frontend/index.html / frontend/static/
-
-
-■ 【要対応】main.py の APP_VERSION
-
-  main.py は同梱していないため、APP_VERSION は 3.28.0 のままになる。
-  リリースのたびに更新する運用なので、必要なら main.py の1行を
-
-      APP_VERSION = "3.29.0"
-
-  に手で更新すること。忘れても /health の commit は変わるため、
-  デプロイの反映判定には影響しない。
-
-
-■ デプロイ後の確認
-
-  1. /health の commit が変わったことを確認する
-
-  2. 文言の反映確認
-     /app/upwork を開き、貼り付け欄のプレースホルダーに
-     "Best matches" と "Most recent" が出ていること
-
-  3. og:image の反映確認
-     SNSにリンクを貼ってカードに画像が出ることを確認する。
-     ※ LinkedIn や X はカードをキャッシュするため、
-       既に貼ったリンクはすぐには変わらない。新しく貼り直すこと。
-
-
-■ 未対応（同じ箇所を次に触るときの候補）
-
-  ・twitter:card の追加
-      <meta name="twitter:card" content="summary_large_image" />
-    これが無いと、X ではカードが小さい正方形になる。
-    入れると横長の大きいカードになる。各ファイル1行。
-
-  ・"Saved Jobs" → "Saved jobs" の表記統一
-    Upworkの実物は小文字のj。sites.py の paste_placeholder と
-    paste_tip の2箇所。
-
-  ・会社名の英語表記の統一
-    現在3種類が混在している。
-      campaign.html      : DoubleMoonTrading Co.（有限会社ダブルムーントレーディング）
-      landing_*.html     : DoubleMoon Trading Co., Ltd.
-      LinkedIn（設定済み）: DoubleMOON Co.
-
-  ・/campaign から Reddit のタグを削除
-    Reddit (r/Upwork, r/freelance) をシェア先候補として表示しているが、
-    r/Upwork はツールの宣伝を規約で禁止しており、
-    従った顧客がアカウント停止になりうる。
+■ 次にやること（このZIPの範囲外）
+  ・Polar の商品名
+  ・X のアカウント名／ハンドル
+  ・LinkedIn の About / Featured
+  ・デモ動画内の文字
+  ・ドメイン移行（2026-09-06 以降）
+  ・メールアドレスの moonpicker.com 化（ドメイン移行と同時）

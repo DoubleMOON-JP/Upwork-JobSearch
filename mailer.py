@@ -17,7 +17,7 @@
 #   SMTP_USER      js_license@doublemoon.biz
 #   SMTP_PASSWORD  （さくらのメールパスワード）
 #   MAIL_FROM      js_license@doublemoon.biz     ※省略時は SMTP_USER
-#   MAIL_FROM_NAME JobSearch                     ※省略可
+#   MAIL_FROM_NAME MOONpicker                    ※省略可
 #   SUPPORT_EMAIL  jobsearch_support@doublemoon.biz  ※省略可
 #   BASE_URL       https://jobsearch.doublemoon.biz  ※既存
 # ─────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ SMTP_PORT      = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER      = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD  = os.environ.get("SMTP_PASSWORD", "")
 MAIL_FROM      = os.environ.get("MAIL_FROM", "") or SMTP_USER
-MAIL_FROM_NAME = os.environ.get("MAIL_FROM_NAME", "JobSearch")
+MAIL_FROM_NAME = os.environ.get("MAIL_FROM_NAME", "MOONpicker")
 SUPPORT_EMAIL  = os.environ.get("SUPPORT_EMAIL", "jobsearch_support@doublemoon.biz")
 BASE_URL       = os.environ.get("BASE_URL", "https://jobsearch.doublemoon.biz")
 
@@ -119,9 +119,9 @@ def _send(to_email: str, subject: str, body: str) -> bool:
 # ── ライセンスキーの送付（新規発行時） ─────────────────────
 def send_license_key(to_email: str, license_key: str, plan: str,
                      expires_at: str | None = None) -> bool:
-    subject = "Your JobSearch licence key"
+    subject = "Your MOONpicker licence key"
     lines = [
-        "Thank you for subscribing to JobSearch.",
+        "Thank you for subscribing to MOONpicker.",
         "",
         "Your licence key:",
         f"    {license_key}",
@@ -155,9 +155,9 @@ def send_license_key(to_email: str, license_key: str, plan: str,
 # ── 更新完了の通知（任意。既定では payments.py から呼んでいない） ──
 def send_renewal_notice(to_email: str, license_key: str, plan: str,
                         expires_at: str | None = None) -> bool:
-    subject = "Your JobSearch subscription has been renewed"
+    subject = "Your MOONpicker subscription has been renewed"
     lines = [
-        "Your JobSearch subscription has been renewed. Thank you.",
+        "Your MOONpicker subscription has been renewed. Thank you.",
         "",
         f"Licence key: {license_key}",
         f"Plan: {_plan_text(plan)}",
@@ -187,7 +187,7 @@ def send_failure_alert(customer_email: str, license_key: str, plan: str,
     """
     if not SUPPORT_EMAIL:
         return False
-    subject = f"[JobSearch] ライセンスキーの送付に失敗しました（{customer_email}）"
+    subject = f"[MOONpicker] ライセンスキーの送付に失敗しました（{customer_email}）"
     lines = [
         "決済は完了しましたが、購入者へのライセンスキー送付に失敗しました。",
         "手動での対応が必要です。",
@@ -208,7 +208,7 @@ def send_failure_alert(customer_email: str, license_key: str, plan: str,
         "  なお購入者は、購入直後であれば購入完了ページでキーを確認できます",
         "  （発行から30分以内）。",
         "",
-        "JobSearch システム通知",
+        "MOONpicker システム通知",
     ]
     return _send(SUPPORT_EMAIL, subject, "\n".join(lines))
 
