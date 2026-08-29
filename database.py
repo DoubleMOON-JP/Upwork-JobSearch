@@ -166,13 +166,27 @@ def generate_license_key() -> str:
     return LICENSE_KEY_PREFIX + '-' + '-'.join(parts)
 
 
-def create_license(email: str, plan: str = '1month', note: str = '') -> dict:
+def create_license(email: str, plan: str = '1month', note: str = '',
+                   expires_at: date | None = None) -> dict:
+    """ライセンスを1件発行する。
+
+    expires_at を渡すと、その日付をそのまま有効期限にする（当日を含む）。
+    Polar の無料トライアルで発行するときに trial_end を渡すために追加した。
+    渡さなければ従来どおり plan_months から計算するので、管理画面・
+    スタッフ画面・更新イベントからの発行は挙動が一切変わらない。
+
+    ※ 過去日を渡された場合は今日まで引き上げる。Webhook が再送で数日
+       遅れて届いたときに、発行した瞬間に失効しているライセンスが
+       できてしまうのを避けるため。
+    """
     from dateutil.relativedelta import relativedelta
     from plans import plan_months   # プラン定義は plans.py に一本化
 
-    months = plan_months(plan)
     key = generate_license_key()
-    expires_at = date.today() + relativedelta(months=months)
+    if expires_at is None:
+        expires_at = date.today() + relativedelta(months=plan_months(plan))
+    elif expires_at < date.today():
+        expires_at = date.today()
 
     with get_conn() as conn:
         with conn.cursor() as cur:

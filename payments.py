@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from datetime import date, datetime
 from enum import Enum
 from typing import Any, Optional
 
@@ -124,6 +125,9 @@ class PaymentEvent:
     checkout_id: str = ""
     # 紹介コード（SNS流入計測）。付いていないことの方が多い。
     ref_code: str = ""
+    # 無料トライアル中に発行する場合の有効期限（trial_end の日付）。
+    # None なら従来どおりプランの月数から計算する。
+    expires_at: Optional[date] = None
 
 
 # 各MoRの商品ID → 自社プラン名。
@@ -224,7 +228,9 @@ def handle_payment_event(ev: PaymentEvent) -> None:
             # 同じ契約の再送（Webhookは再送されることがある）。二重発行しない。
             log.info("activate ignored, license already exists for %s", ev.subscription_id)
             return
-        res = create_license(ev.email, ev.plan)        # dict を返す
+        # expires_at はトライアル発行時のみ入る。None なら従来どおり
+        # プランの月数から計算される（既存の呼び出しと同じ挙動）。
+        res = create_license(ev.email, ev.plan, expires_at=ev.expires_at)
         key = res["license_key"]
         link_subscription(key, ev.provider, ev.subscription_id)
         # チェックアウトIDを紐づける。/thanks がこれを鍵にキーを取りに来る。
@@ -239,8 +245,9 @@ def handle_payment_event(ev: PaymentEvent) -> None:
                 set_license_ref(key, ev.ref_code)
         except Exception as e:
             log.error("could not link ref_code for %s: %s", key, e)
-        log.info("license issued %s for %s (ref=%s)",
-                 key, ev.subscription_id, ev.ref_code or "-")
+        log.info("license issued %s for %s (ref=%s, expires=%s%s)",
+                 key, ev.subscription_id, ev.ref_code or "-",
+                 res.get("expires_at"), " TRIAL" if ev.expires_at else "")
         # 顧客へライセンスキーをメール送付。
         # 送信に失敗しても例外は出さない（mailer側で握りつぶす）。Webhookを落とすと
         # Polarが再送し、二重処理の原因になるため。失敗時はログを見て手動送付する。
@@ -282,6 +289,34 @@ def _get(obj: Any, *names, default=None):
             if val is not None:
                 return val
     return default
+
+
+def _parse_utc_date(value: Any) -> Optional[date]:
+    """Polar の日時文字列を date にする（例 "2026-08-26T01:44:05.647917Z"）。
+
+    SDKのモデルを介さず生JSONを読んでいるため通常は文字列で来るが、
+    将来 datetime が来ても壊れないよう両方受ける。
+    解釈できなければ None を返し、呼び出し側は従来の計算に落ちる。
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):     # datetime は date の派生なので先に判定する
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        # 末尾の "Z" を解釈できない版があるためオフセット表記に置き換える
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        pass
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        log.warning("could not parse date: %r", value)
+        return None
 
 
 def _customer_email(data: Any) -> str:
@@ -350,11 +385,24 @@ class PolarAdapter(PaymentAdapter):
 
         event_type = str(event.get("type") or "")
         data = event.get("data")
+        # トライアル発行のときだけ値が入る。それ以外は None のまま渡す。
+        expires_at: Optional[date] = None
 
         if event_type in self.ACTIVATE_EVENTS:
             # サブスクリプション本体のイベント → id がそのまま契約ID
             subscription_id = str(_get(data, "id", default="") or "")
             kind = EventKind.ACTIVATE
+            # 無料トライアル付きで申し込まれた場合、この時点の status は
+            # "trialing" で、trial_end にトライアル終了日時が入る。
+            # 2026-08-25 の実測では current_period_end も同じ値だったので、
+            # trial_end が取れなければそちらを使う。
+            # ここを渡さないと、1日トライアルでも1か月分の期限で発行される。
+            if str(_get(data, "status", default="") or "") == "trialing":
+                expires_at = _parse_utc_date(
+                    _get(data, "trial_end") or _get(data, "current_period_end")
+                )
+                log.info("trial subscription %s -> licence expires %s",
+                         subscription_id, expires_at)
 
         elif event_type in self.ORDER_PAID_EVENTS:
             # 注文イベント → 契約IDは subscription_id 側にある（id は注文IDなので使わない）
@@ -434,6 +482,7 @@ class PolarAdapter(PaymentAdapter):
             product_id=_product_id(data),
             checkout_id=checkout_id,
             ref_code=ref_code,
+            expires_at=expires_at,
         )
 
 
