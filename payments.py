@@ -58,6 +58,15 @@ STRICT_PRODUCT_MAPPING = True
 # 管理画面の「プラン変更」ボタンは、自動反映が失敗した場合の修正手段として残してある。
 AUTO_APPLY_PLAN_CHANGE = True
 
+# 無料トライアルで発行するときのプラン名（plans.py に定義がある）。
+# 商品IDは Basic のままなので PRODUCT_TO_PLAN では解決できない。
+# status="trialing" を根拠に、発行の直前で差し替える。
+#   ・トライアル中 … このプラン（月10回）
+#   ・本課金へ移行 … 商品IDから解決した本来のプラン（Basic 100回 / Pro 300回）へ戻す
+# ★戻す処理を落とすと、$9を払った顧客が月10回しか使えない状態になる。
+#   エラーは出ず、顧客が11件目で初めて気づくため、最も見つけにくい壊れ方になる。
+TRIAL_PLAN = "trial"
+
 
 def _record_mail_status(license_key: str, status: str, error: str = None) -> None:
     """送付結果をDBに残す。ここで失敗してもWebhookは落とさない
@@ -128,6 +137,10 @@ class PaymentEvent:
     # 無料トライアル中に発行する場合の有効期限（trial_end の日付）。
     # None なら従来どおりプランの月数から計算する。
     expires_at: Optional[date] = None
+    # 無料トライアルとして申し込まれたか（Polarの status="trialing"）。
+    # expires_at の有無で判定しないのは、日付の取得に失敗しても
+    # 「トライアルである」という事実は変わらないため。
+    is_trial: bool = False
 
 
 # 各MoRの商品ID → 自社プラン名。
@@ -172,6 +185,18 @@ def _notify_plan_change(ev: PaymentEvent, existing) -> None:
 
     new_plan = PRODUCT_TO_PLAN.get(ev.provider, {}).get(ev.product_id)
     current_plan = existing.get("plan")
+
+    # ★トライアル中は自動変更しない（v3.33）。
+    # トライアルのライセンスは plan="trial" だが、商品IDは Basic のままなので
+    # ここでは必ず「trial → 1month」というズレとして見える。
+    # AUTO_APPLY_PLAN_CHANGE=True のまま放置すると、subscription.updated が
+    # 1回飛んだだけで（解約予約・カード情報の更新などでも飛ぶ）トライアル中に
+    # 上限が100回へ増えてしまい、10回の制限が意味を失う。
+    # トライアルから本来のプランへ戻すのは RENEW（本課金の入金）だけの仕事とする。
+    if current_plan == TRIAL_PLAN:
+        log.info("plan notice ignored while on trial: license=%s subscription=%s",
+                 existing.get("license_key"), ev.subscription_id)
+        return
 
     if new_plan is None:
         log.warning(
@@ -223,11 +248,22 @@ def handle_payment_event(ev: PaymentEvent) -> None:
 
     months = plan_months(ev.plan)
 
+    # 商品IDから解決した「本来のプラン」を控えておく。
+    # トライアル発行では ev.plan を trial に差し替えるため、
+    # 本課金へ移行したときに戻す先が分からなくなるのを防ぐ。
+    paid_plan = ev.plan
+
     if ev.kind == EventKind.ACTIVATE:
         if existing:
             # 同じ契約の再送（Webhookは再送されることがある）。二重発行しない。
             log.info("activate ignored, license already exists for %s", ev.subscription_id)
             return
+        # 無料トライアルなら、上限10回のトライアルプランで発行する（v3.33）。
+        # 商品IDは Basic のままなので、ここで差し替えないと100回で発行される。
+        if ev.is_trial:
+            ev.plan = TRIAL_PLAN
+            log.info("trial checkout -> issuing with plan=%s (paid plan will be %s)",
+                     TRIAL_PLAN, paid_plan)
         # expires_at はトライアル発行時のみ入る。None なら従来どおり
         # プランの月数から計算される（既存の呼び出しと同じ挙動）。
         res = create_license(ev.email, ev.plan, expires_at=ev.expires_at)
@@ -257,6 +293,29 @@ def handle_payment_event(ev: PaymentEvent) -> None:
         if existing:
             extend_license(existing["license_key"], months)
             log.info("license extended %s (+%dm)", existing["license_key"], months)
+            # ★トライアルからの本課金移行（v3.33）。
+            # extend_license は有効期限しか更新しないため、plan は trial のまま残る。
+            # ここで本来のプランへ戻さないと、$9を払った顧客が月10回で止まる。
+            # 繰り越し付きの apply_plan_change ではなく update_license_plan を使う。
+            # 支払いが始まった月は素直に100回（Basic）とするのが説明のつく形で、
+            # 繰り越し（10+100=110回）は金額の根拠がないため。
+            if existing.get("plan") == TRIAL_PLAN and paid_plan != TRIAL_PLAN:
+                try:
+                    from database import update_license_plan
+                    r = update_license_plan(existing["license_key"], paid_plan)
+                    if r.get("success"):
+                        log.info("trial converted: license=%s plan %s -> %s",
+                                 existing["license_key"], TRIAL_PLAN, paid_plan)
+                    else:
+                        log.error("MANUAL ACTION REQUIRED: trial conversion failed "
+                                  "for %s (%s). Change the plan to %s in /admin.",
+                                  existing["license_key"], r.get("message"), paid_plan)
+                except Exception as e:
+                    # ここで例外を上げるとWebhookが500になり、Polarが再送して
+                    # 期限が二重に延びる。記録だけ残して200を返し切る。
+                    log.error("MANUAL ACTION REQUIRED: trial conversion error "
+                              "for %s (%s). Change the plan to %s in /admin.",
+                              existing["license_key"], e, paid_plan)
         else:
             # 初回購入の入金だけ先に届いた場合の保険。発行して紐づける。
             res = create_license(ev.email, ev.plan)
@@ -387,6 +446,8 @@ class PolarAdapter(PaymentAdapter):
         data = event.get("data")
         # トライアル発行のときだけ値が入る。それ以外は None のまま渡す。
         expires_at: Optional[date] = None
+        # 無料トライアルとして申し込まれたか（v3.33）。
+        is_trial = False
 
         if event_type in self.ACTIVATE_EVENTS:
             # サブスクリプション本体のイベント → id がそのまま契約ID
@@ -398,6 +459,7 @@ class PolarAdapter(PaymentAdapter):
             # trial_end が取れなければそちらを使う。
             # ここを渡さないと、1日トライアルでも1か月分の期限で発行される。
             if str(_get(data, "status", default="") or "") == "trialing":
+                is_trial = True
                 expires_at = _parse_utc_date(
                     _get(data, "trial_end") or _get(data, "current_period_end")
                 )
@@ -483,6 +545,7 @@ class PolarAdapter(PaymentAdapter):
             checkout_id=checkout_id,
             ref_code=ref_code,
             expires_at=expires_at,
+            is_trial=is_trial,
         )
 
 

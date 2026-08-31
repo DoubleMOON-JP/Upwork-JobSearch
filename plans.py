@@ -17,6 +17,21 @@ PLANS = {
     # 上位プラン（$15/月）
     "1month_pro": {"months": 1, "monthly_cap": 300, "label": "Pro（月300回）",
                    "price_usd": 15},
+    # 無料トライアル（v3.33）
+    # Polarのチェックアウトリンクで Free trial period を設定した場合のみ使われる。
+    # 商品は Basic のままなので PRODUCT_TO_PLAN には現れない。
+    # payments.py が status="trialing" を見て、このプランに差し替えて発行する。
+    #
+    # ★months は使われない。トライアルの期間は Polar の trial_end で決まり、
+    #   create_license に expires_at として直接渡されるため。
+    #   ここに 1 を書いてあるのは、万一 plan_months() が呼ばれても
+    #   おかしな値にならないようにするための保険。
+    #
+    # ★monthly_cap は「暦月」あたりの回数。月をまたぐトライアルでは
+    #   最大20回になる（例：9/10開始 → 9月分10回＋10月分10回）。
+    #   AIコストで約$0.15のため許容する（2026-08-30 Koji 判断）。
+    "trial":      {"months": 1, "monthly_cap": 10,  "label": "トライアル（10回）",
+                   "price_usd": 0},
 }
 
 # 対応表に無いプラン名が来た時のフォールバック先。

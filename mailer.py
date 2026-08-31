@@ -47,6 +47,8 @@ SMTP_TIMEOUT = 20  # 秒。Webhookの応答が遅れすぎないように短め�
 PLAN_TEXT_EN = {
     "1month":     ("Basic", 100),
     "1month_pro": ("Pro",   300),
+    # 無料トライアル（v3.33）。顧客向け表記は「Trial」。
+    "trial":      ("Trial",  10),
 }
 
 
@@ -57,6 +59,10 @@ def is_configured() -> bool:
 
 def _plan_text(plan: str) -> str:
     name, cap = PLAN_TEXT_EN.get(plan, ("Standard", 100))
+    # トライアルで「per month」と書くと、毎月10回もらえるように読める。
+    # 実際は1か月の試用期間中に通算10回なので、期間の表現を落とす。
+    if plan == "trial":
+        return f"{name} — {cap} job evaluations"
     return f"{name} — {cap} job evaluations per month"
 
 
@@ -116,9 +122,57 @@ def _send(to_email: str, subject: str, body: str) -> bool:
         return False
 
 
+# ── トライアル用の案内（v3.33）───────────────────────────
+# 【日付を書かない理由】2026-08-30 決定。
+#   こちらが持っているのは trial_end を日付単位に丸めた値で、Polar が実際に
+#   課金する瞬間（時刻・UTC）とは1日ずれ得る。またカード決済が失敗すると
+#   Polar 側だけが最長21日後ろへずれる。「書いた日付に課金されなかった」は
+#   金額が小さくても信用を損なうため、正確な日付は Polar の確認メールに任せる。
+def _trial_body(license_key: str) -> str:
+    lines = [
+        "Thanks for trying MOONpicker.",
+        "",
+        "Your licence key:",
+        f"    {license_key}",
+        "",
+        "Your trial includes 10 evaluations over one month.",
+        "",
+        "One evaluation scores a whole batch of listings at once, so paste in",
+        "everything you are considering rather than one job at a time. Ten batches",
+        "is enough to see whether the scores match your own judgement.",
+        "",
+        "Fill in your profile first — skills, target rate, keywords. The scores are",
+        "only as good as what you tell it about you. Your profile stays in your own",
+        "browser, not on our servers.",
+        "",
+        "After the trial, MOONpicker Basic continues at $9 a month with 100",
+        "evaluations a month. Polar has emailed you the exact date, and you can",
+        "cancel at any time before then.",
+        "",
+        "How to start",
+        f"  1. Open {BASE_URL}/app/upwork",
+        "  2. Paste the licence key on the sign-in screen and accept the privacy policy.",
+        "  3. Fill in your profile, then paste in your job search results.",
+        "",
+        "Keep this email. The key is how you sign in on a new device or browser.",
+        "",
+        f"Questions? Just reply to this email, or write to {SUPPORT_EMAIL}",
+        "",
+        "DoubleMoonTrading Co.",
+        BASE_URL,
+    ]
+    return "\n".join(lines)
+
+
 # ── ライセンスキーの送付（新規発行時） ─────────────────────
 def send_license_key(to_email: str, license_key: str, plan: str,
                      expires_at: str | None = None) -> bool:
+    # トライアルは本文を丸ごと入れ替える（v3.33）。
+    # 通常の文面に分岐を混ぜると、どちらも読みにくくなるため分けている。
+    if plan == "trial":
+        return _send(to_email, "Your MOONpicker trial is ready",
+                     _trial_body(license_key))
+
     subject = "Your MOONpicker licence key"
     lines = [
         "Thank you for subscribing to MOONpicker.",
