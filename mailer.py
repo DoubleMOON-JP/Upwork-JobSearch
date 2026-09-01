@@ -14,11 +14,17 @@
 # 【Renderに設定する環境変数】
 #   SMTP_HOST      doublemoon.sakura.ne.jp
 #   SMTP_PORT      587          （STARTTLS。465にするとSSL接続になる）
-#   SMTP_USER      js_license@doublemoon.biz
+#   SMTP_USER      mp_license@doublemoon.biz
 #   SMTP_PASSWORD  （さくらのメールパスワード）
-#   MAIL_FROM      js_license@doublemoon.biz     ※省略時は SMTP_USER
+#   MAIL_FROM      mp_license@doublemoon.biz     ※省略時は SMTP_USER
 #   MAIL_FROM_NAME MOONpicker                    ※省略可
-#   SUPPORT_EMAIL  jobsearch_support@doublemoon.biz  ※省略可
+#   SUPPORT_EMAIL  moonpicker_support@doublemoon.biz  ※省略可
+#
+#   【2026-09-01 実測】Render には MAIL_FROM / MAIL_FROM_NAME を設定していない。
+#   差出人アドレスは SMTP_USER が流用され、差出人名はこのファイルの既定値が効く。
+#   SUPPORT_EMAIL は 2026-09-01 に Render へ追加済み。
+#   ★環境変数はDBのバックアップに含まれない（対応予定 No.25）。
+#     Renderを作り直すと未設定に戻るため、既定値も新アドレスに揃えてある。
 #   BASE_URL       https://jobsearch.doublemoon.biz  ※既存
 # ─────────────────────────────────────────────────────────────
 from __future__ import annotations
@@ -38,7 +44,7 @@ SMTP_USER      = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD  = os.environ.get("SMTP_PASSWORD", "")
 MAIL_FROM      = os.environ.get("MAIL_FROM", "") or SMTP_USER
 MAIL_FROM_NAME = os.environ.get("MAIL_FROM_NAME", "MOONpicker")
-SUPPORT_EMAIL  = os.environ.get("SUPPORT_EMAIL", "jobsearch_support@doublemoon.biz")
+SUPPORT_EMAIL  = os.environ.get("SUPPORT_EMAIL", "moonpicker_support@doublemoon.biz")
 BASE_URL       = os.environ.get("BASE_URL", "https://jobsearch.doublemoon.biz")
 
 SMTP_TIMEOUT = 20  # 秒。Webhookの応答が遅れすぎないように短めにする。
