@@ -54,7 +54,7 @@ from payments import router as payments_router  # 決済Webhook: POST /webhook/{
 # 「新しいコードが本当に載ったか」はこちらで判定する。
 # 環境変数が無い場合（ローカル起動など）は "unknown" を返す。
 # ここが "unknown" のままなら、環境変数名が違うということ。
-APP_VERSION = "3.32.0"
+APP_VERSION = "3.33.0"
 GIT_COMMIT = (
     os.environ.get("RENDER_GIT_COMMIT")
     or os.environ.get("GIT_COMMIT")
