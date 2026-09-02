@@ -71,6 +71,15 @@
   .mail p:last-child{margin-bottom:0}
   .mono{font-family:var(--font-mono); font-size:13px}
 
+  /* トライアル時だけ出す注記。課金がまだ発生していないことを明示する。 */
+  .trialnote{
+    background:var(--maybe-bg); border:1px solid var(--maybe-line);
+    border-radius:var(--radius-sm); padding:16px 20px; margin:0 0 26px;
+  }
+  .trialnote.hidden{display:none}
+  .trialnote p{margin:0; font-size:13.5px; color:#6E4D00}
+  .trialnote b{color:var(--maybe)}
+
   /* ライセンスキーの表示欄。取得できた時だけ出す（既定は非表示）。 */
   .keybox{
     background:#FFFFFF; border:2px solid var(--brand);
@@ -148,13 +157,21 @@
 <main>
   <div class="wrap">
     <div class="card">
-      <div class="check">✓</div>
-      <p class="kicker">Payment complete</p>
-      <h2>Thank you — your subscription is active.</h2>
-      <p class="lead">
+      <div class="check" id="check">✓</div>
+      <p class="kicker" id="kicker">Payment complete</p>
+      <h2 id="headline">Thank you — your subscription is active.</h2>
+      <p class="lead" id="lead">
         Your licence key has been sent to the email address you used at checkout.
         You can close this page; nothing else is needed here.
       </p>
+
+      <!-- トライアル専用の注記。plan が trial のときだけ表示する。 -->
+      <div class="trialnote hidden" id="trialnote">
+        <p><b>You have not been charged today.</b>
+           When the trial ends, MOONpicker Basic starts at $9 a month and your limit
+           increases to 100 evaluations a month. Polar has emailed you the exact date,
+           and you can cancel at any time before then from the link in that email.</p>
+      </div>
 
       <!-- 取得中の表示。checkout_id が無い場合は最初から出さない。 -->
       <div class="keywait hidden" id="keywait">
@@ -254,8 +271,35 @@
     if (elWait) { elWait.classList.add("hidden"); }
   }
 
+  /* トライアルは「支払い完了」ではない。
+     $0 の取引なのに PAYMENT COMPLETE と出ると、
+     「もう払ったので請求は来ない」と誤解され、トライアル終了時の課金で
+     問い合わせや返金につながる。plan を見て文言を入れ替える。
+     判定は plan_label（表示用の文字列）ではなく plan の生値で行う。
+     表示文言はいつでも変わり得るため。 */
+  function applyTrialWording() {
+    var elKick  = document.getElementById("kicker");
+    var elHead  = document.getElementById("headline");
+    var elLead  = document.getElementById("lead");
+    var elNote  = document.getElementById("trialnote");
+    var elCheck = document.getElementById("check");
+
+    if (elKick)  { elKick.textContent = "Trial started"; }
+    if (elHead)  { elHead.textContent = "Your trial is ready."; }
+    if (elLead)  {
+      elLead.textContent =
+        "Your licence key has been sent to the email address you used at checkout. " +
+        "You can close this page; nothing else is needed here.";
+    }
+    if (elCheck) { elCheck.textContent = "★"; }
+    if (elNote)  { elNote.classList.remove("hidden"); }
+
+    document.title = "Your trial is ready — MOONpicker";
+  }
+
   function show(data) {
     if (elWait) { elWait.classList.add("hidden"); }
+    if (data.plan === "trial") { applyTrialWording(); }
     if (!elBox || !elVal) { return; }
     elVal.textContent = data.license_key;
     if (elMeta) {
