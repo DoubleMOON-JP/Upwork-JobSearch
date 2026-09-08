@@ -32,7 +32,7 @@ from database import (
 # ── リデザイン追加分 ──
 from db_redesign import (  # DBマイグレーション・広告欄・紹介リンク・スタッフ照合
     migrate, get_promo, find_license_by_checkout, record_referral_visit,
-    referral_site, verify_staff
+    record_lp_visit, referral_site, verify_staff
 )
 from plans import (  # プラン定義（単一情報源）
     plan_label
@@ -242,12 +242,26 @@ async def referral_redirect(code: str, request: Request):
 
 
 @app.get("/for/{site}", response_class=HTMLResponse)
-async def landing_page(site: str):
+async def landing_page(site: str, request: Request):
     """ジョブサイト別のLP。frontend/landing_{site}.html を配信する。
     新サイト追加時はHTMLを1枚置くだけでよく、コード変更は不要。"""
     # パストラバーサル防止（英小文字・数字・ハイフンのみ許可）
     if not re.fullmatch(r"[a-z0-9-]{1,32}", site):
         return HTMLResponse(content="<h1>Not found</h1>", status_code=404)
+
+    # LP到達の記録（広告の計測用）。媒体のクリック数は媒体ごとに定義が違うため、
+    # 全媒体を同じ物差しで測れるよう自社側でも数える。
+    # 記録に失敗しても表示は続ける。計測は付加機能であり、
+    # ここで止めるとLPそのものが見られなくなる（/r/ と同じ方針）。
+    try:
+        record_lp_visit(
+            site,
+            request.query_params.get("ref", ""),
+            request.headers.get("user-agent", ""),
+        )
+    except Exception as e:
+        log.error("could not record lp visit (%s): %s", site, e)
+
     return _serve_html(
         f"frontend/landing_{site}.html", f"landing_{site}.html",
         fallback="<h1>Not found</h1>", status=404,

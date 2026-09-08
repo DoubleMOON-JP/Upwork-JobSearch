@@ -98,6 +98,29 @@ def migrate():
                 CREATE INDEX IF NOT EXISTS idx_ref_visits
                     ON referral_visits(code, visited_at);
 
+                -- ── LP到達の記録（広告の計測用）──────────────────
+                -- referral_visits とは別のテーブルにする。あちらは /r/{code} を
+                -- 踏んだ回数で、こちらは /for/{site} が表示された回数。
+                -- 同じ人が /r/ 経由で来ると両方に1件ずつ入るため、
+                -- 集計時にどちらの定義かを意識すること（二重計上ではなく別指標）。
+                --
+                -- 媒体のクリック数に頼らない理由：媒体ごとに集計の定義
+                -- （誤タップの扱い・ボット除外の方針）が異なり、Meta の1,000と
+                -- X の1,000を同じ物差しで比べられないため。自社で数えれば揃う。
+                --
+                -- ref_code は ?ref= が付いていたときだけ入る。広告経由と
+                -- 自然流入を分けて数えるため。未登録のコードでも記録する
+                -- （referral_visits と違い、ここは「LPが表示された事実」を残すのが目的）。
+                CREATE TABLE IF NOT EXISTS lp_visits (
+                    id         SERIAL PRIMARY KEY,
+                    site       TEXT NOT NULL,
+                    ref_code   TEXT,
+                    visited_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    is_bot     BOOLEAN NOT NULL DEFAULT FALSE
+                );
+                CREATE INDEX IF NOT EXISTS idx_lp_visits
+                    ON lp_visits(site, visited_at);
+
                 -- 購入元の紹介コード。Polarのメタデータ経由で受け取る。
                 ALTER TABLE licenses ADD COLUMN IF NOT EXISTS ref_code TEXT;
                 CREATE INDEX IF NOT EXISTS idx_licenses_ref ON licenses(ref_code);
@@ -334,6 +357,31 @@ def record_referral_visit(code: str, user_agent: str = "") -> None:
             cur.execute(
                 "INSERT INTO referral_visits (code, is_bot) VALUES (%s, %s)",
                 (code, _looks_like_bot(user_agent)),
+            )
+
+
+def record_lp_visit(site: str, ref_code: str = "", user_agent: str = "") -> None:
+    """LP（/for/{site}）が表示されたことを1件記録する。
+
+    record_referral_visit() と違い、未登録の ref_code でも記録する。
+    ここで数えたいのは「LPに到達した人数」であって、紹介コードの正しさではない。
+    ?ref= が無い自然流入こそ主な対象のため、コードの存在確認はしない。
+
+    ここで例外が出てもLPの表示は続行させること（計測は付加機能）。
+    """
+    site = (site or "").strip()[:32]
+    if not site:
+        return
+    # ?ref= は外部から来る値なので、形式を制限してから保存する。
+    # referral コードと同じ規則（英数字・ハイフン・アンダースコア・64文字まで）。
+    code = (ref_code or "").strip()[:64]
+    if code and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", code):
+        code = ""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO lp_visits (site, ref_code, is_bot) VALUES (%s, %s, %s)",
+                (site, code or None, _looks_like_bot(user_agent)),
             )
 
 
