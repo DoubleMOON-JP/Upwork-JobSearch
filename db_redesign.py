@@ -385,6 +385,112 @@ def record_lp_visit(site: str, ref_code: str = "", user_agent: str = "") -> None
             )
 
 
+def lp_visit_summary(date_from=None, date_to=None):
+    """サイト × 流入区分（広告経由 / 自然流入）の集計。
+
+    ref_code が入っていれば「紹介リンク経由」、NULL なら「直接・自然流入」。
+    広告は紹介コード付きのURLで出すため、この2つを分けて見られると
+    「広告で増えた分」と「もともとの流入」を区別できる。
+    """
+    where, params = [], []
+    if date_from:
+        where.append("visited_at >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("visited_at < (%s::date + INTERVAL '1 day')")
+        params.append(date_to)
+    w = (" WHERE " + " AND ".join(where)) if where else ""
+    sql = f"""
+        SELECT site,
+               (ref_code IS NOT NULL)                    AS has_ref,
+               COUNT(*)                                  AS visits,
+               COUNT(*) FILTER (WHERE is_bot = FALSE)    AS human
+          FROM lp_visits{w}
+         GROUP BY site, (ref_code IS NOT NULL)
+         ORDER BY site, has_ref DESC
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, params)
+            return [dict(r) for r in cur.fetchall()]
+
+
+def lp_visit_by_ref(date_from=None, date_to=None):
+    """紹介コード別のLP到達数。referral_visits（/r/ を踏んだ回数）とは別物。
+
+    こちらは「LPが実際に表示された回数」。リダイレクトを解決する媒体では
+    /r/ が記録されないため、この数字のほうが実態に近いことがある。
+    """
+    where, params = ["ref_code IS NOT NULL"], []
+    if date_from:
+        where.append("visited_at >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("visited_at < (%s::date + INTERVAL '1 day')")
+        params.append(date_to)
+    sql = f"""
+        SELECT ref_code, site,
+               COUNT(*)                                  AS visits,
+               COUNT(*) FILTER (WHERE is_bot = FALSE)    AS human,
+               MAX(visited_at)                           AS last_at
+          FROM lp_visits
+         WHERE {" AND ".join(where)}
+         GROUP BY ref_code, site
+         ORDER BY human DESC, visits DESC
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, params)
+            return [dict(r) for r in cur.fetchall()]
+
+
+def lp_visit_daily(days: int = 30):
+    """日別の推移。広告の出稿日と山が一致するかを見るために使う。
+
+    件数が0の日は行として出てこない。画面側で日付を埋めること
+    （SQLで日付を生成すると、集計の意図より仕組みのほうが複雑になるため）。
+    """
+    days = max(1, min(int(days or 30), 180))
+    sql = """
+        SELECT visited_at::date                          AS d,
+               COUNT(*)                                  AS visits,
+               COUNT(*) FILTER (WHERE is_bot = FALSE)    AS human,
+               COUNT(*) FILTER (WHERE is_bot = FALSE
+                                  AND ref_code IS NOT NULL) AS human_ref
+          FROM lp_visits
+         WHERE visited_at >= CURRENT_DATE - %s::int
+         GROUP BY visited_at::date
+         ORDER BY d DESC
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, (days,))
+            return [dict(r) for r in cur.fetchall()]
+
+
+def lp_visit_rows(date_from=None, date_to=None, limit: int = 5000):
+    """CSV出力用の明細。1訪問1行。"""
+    where, params = [], []
+    if date_from:
+        where.append("visited_at >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("visited_at < (%s::date + INTERVAL '1 day')")
+        params.append(date_to)
+    w = (" WHERE " + " AND ".join(where)) if where else ""
+    params.append(max(1, min(int(limit or 5000), 50000)))
+    sql = f"""
+        SELECT id, site, ref_code, is_bot, visited_at
+          FROM lp_visits{w}
+         ORDER BY id DESC
+         LIMIT %s
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, params)
+            return [dict(r) for r in cur.fetchall()]
+
+
 def set_license_ref(license_key: str, ref_code: str) -> None:
     """発行したライセンスに紹介コードを紐づける。"""
     if not ref_code:

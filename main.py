@@ -555,6 +555,8 @@ app.include_router(build_referrals_router(verify_any))
 # いずれもシステム管理者専用のため verify_admin を渡す。
 from admin_home import build_home_router
 from admin_prompts import build_prompts_router
+from admin_lp_visits import build_lp_visits_router   # LP到達の集計（広告の効果測定）
 
 app.include_router(build_home_router(verify_admin))
 app.include_router(build_prompts_router(verify_admin))
+app.include_router(build_lp_visits_router(verify_admin))

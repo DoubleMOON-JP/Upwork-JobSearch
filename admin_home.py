@@ -318,6 +318,17 @@ async def admin_page(username: str = Depends(verify)):
     <a href="/staff" style="font-size:11px;color:#2E75B6;margin-left:14px">スタッフ用画面を見る</a>
   </div>
 
+  <!-- LP到達の集計（広告の効果測定）への導線 -->
+  <div class="card">
+    <h2>📈 LP到達の集計</h2>
+    <p style="font-size:12px;color:#777;margin-bottom:12px">
+      広告の効果測定。LPが表示された回数を、紹介リンク経由と自然流入に分けて集計します。
+      媒体のツールに頼らないため、Meta・X などを比較しても同じ物差しで測れます。
+    </p>
+    <a href="/admin/lp-visits" class="btn btn-blue"
+       style="text-decoration:none;display:inline-block">LP到達の集計を開く →</a>
+  </div>
+
   <!-- 担当者マスタ -->
   <div class="card">
     <h2>👥 担当者マスタ</h2>
