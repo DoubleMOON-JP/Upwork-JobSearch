@@ -448,14 +448,14 @@ Registered Users &nbsp; Copyright ©
   </div>
 </section>
 
-<!-- ===== TRIAL BAND START（広告期間のみ表示・掲載終了時はこのブロックごと削除） ===== -->
-<section class="trial-band">
+<!-- ===== TRIAL BAND START（紹介コード経由の訪問者にのみ表示・script側で hidden を外す） ===== -->
+<section class="trial-band" id="trial-band" hidden>
   <div class="wrap">
     <div class="trial-inner">
 
       <div>
         <p class="trial-kicker">Free trial</p>
-        <h3>Take a month to decide &mdash; free until September 30.</h3>
+        <h3>Take a month to decide &mdash; the first month is free.</h3>
         <p>Start on Basic without paying today. Score real listings against your own profile, on your own job hunt, and see whether the verdicts match what you would have picked yourself.</p>
         <ul>
           <li>10 project evaluations per month while the trial runs</li>
@@ -467,7 +467,7 @@ Registered Users &nbsp; Copyright ©
 
       <div class="trial-cta">
         <a class="btn btn-primary" href="https://buy.polar.sh/polar_cl_NDuZ0ZqIKKt4f23fHggiAegO8myzom88iZdrv1CuquQ" data-checkout>Start your free month</a>
-        <p class="trial-foot">A card is required to start, but nothing is charged today. After one month it becomes Basic at $9 / month with 100 evaluations, unless you cancel first. Cancel any time from your own dashboard. Secure checkout by Polar. <strong>This offer ends September 30, 2026.</strong></p>
+        <p class="trial-foot">A card is required to start, but nothing is charged today. After one month it becomes Basic at $9 / month with 100 evaluations, unless you cancel first. Cancel any time from your own dashboard. Secure checkout by Polar.</p>
       </div>
 
     </div>
@@ -629,9 +629,16 @@ Registered Users &nbsp; Copyright ©
   }
 
   var code = fromUrl || storedCode();
+
+  /* 3. 紹介コードがあるときだけトライアル枠を出す（配信者経由の限定オファー） */
+  if (code) {
+    var band = document.getElementById("trial-band");
+    if (band) { band.hidden = false; }
+  }
+
   if (!code) { return; }
 
-  /* 3. 購入ボタンのURLにパラメータを足す */
+  /* 4. 購入ボタンのURLにパラメータを足す */
   var links = document.querySelectorAll("a[data-checkout]");
   for (var i = 0; i < links.length; i++) {
     var a = links[i];
