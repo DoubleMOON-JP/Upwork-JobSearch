@@ -621,11 +621,15 @@ Proposals: 20 to 50 &nbsp; $0 spent<br />
 
   var code = fromUrl || storedCode();
 
-  /* 3. 紹介コードがあるときだけトライアル枠を出す（配信者経由の限定オファー） */
-  if (code) {
-    var band = document.getElementById("trial-band");
-    if (band) { band.hidden = false; }
-  }
+  /* 3. トライアル枠の表示
+     2026-09-22 停止：trial → 1month の転換が本番で未検証のため（README_v3.33 ★転換の確認）、
+     トライアルの提供を一時停止する。X広告の流入にトライアルを見せない。
+     紹介コードの受け渡し（下の 4.）はそのまま生かす。
+     再開するときは、下の4行のコメントを外すだけでよい。 */
+  // if (code) {
+  //   var band = document.getElementById("trial-band");
+  //   if (band) { band.hidden = false; }
+  // }
 
   if (!code) { return; }
 
