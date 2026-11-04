@@ -32,6 +32,15 @@ PLANS = {
     #   AIコストで約$0.15のため許容する（2026-08-30 Koji 判断）。
     "trial":      {"months": 1, "monthly_cap": 10,  "label": "トライアル（10回）",
                    "price_usd": 0},
+    # 無料公開（v3.36）
+    # /signup でメールアドレスを登録した人に発行する。有料の Basic と同じ月100回。
+    # 2026-11-04 Koji 判断（1回＝貼り付け1回分の一括採点。AIコスト約$0.015/回）。
+    #
+    # ★months は使われない。期限は signup.py が環境変数 FREE_PERIOD_END
+    #   （既定 2026-12-31）を create_license に expires_at として直接渡す。
+    # ★price_usd を 0 にしているので、紹介リンク管理のMRRには加算されない。
+    "free":       {"months": 1, "monthly_cap": 100, "label": "無料（月100回）",
+                   "price_usd": 0},
 }
 
 # 対応表に無いプラン名が来た時のフォールバック先。

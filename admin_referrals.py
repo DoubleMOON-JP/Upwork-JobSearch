@@ -23,6 +23,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from db_redesign import (
     create_referral, set_referral_active, referral_exists,
     referral_stats, referral_detail_rows, active_staff_names,
+    free_signup_stats,   # v3.36 無料登録を購入と分けて表示する
 )
 from plans import plan_label, plan_price_usd
 from sites import DEFAULT_SITE, is_valid_site, site_label, enabled_sites
@@ -100,6 +101,12 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify)):
     except Exception as e:
         log.error("referral stats failed: %s", e)
         stats = []
+    # 無料登録（v3.36）。referral_stats は無料登録も購入に数えるため、ここで差し引く。
+    try:
+        free = free_signup_stats(d_from, d_to)
+    except Exception as e:
+        log.error("free signup stats failed: %s", e)
+        free = {}
 
     base = (BASE_URL or "").rstrip("/")
     T  = ui_text(who)
@@ -116,8 +123,10 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify)):
         code = st["code"]
         visits = st["human_visits"] or 0
         bots = (st["visits"] or 0) - visits
-        purchases = st["purchases"] or 0
-        active_cnt = st["active_cnt"] or 0
+        fr = free.get(code, {})
+        signups = fr.get("signups", 0)
+        purchases = max((st["purchases"] or 0) - signups, 0)
+        active_cnt = max((st["active_cnt"] or 0) - fr.get("active_free", 0), 0)
         mrr = _ref_mrr(st.get("active_plans"))
         cvr = f"{(purchases / visits * 100):.1f}%" if visits else "—"
         url = f"{base}/r/{code}"
@@ -145,6 +154,7 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify)):
           <td style="font-size:12px">{esc(st.get('owner') or '—')}</td>
           <td style="font-size:11px">{esc(site_label(st.get('site') or DEFAULT_SITE))}</td>
           <td style="text-align:right">{visits}{bot_note}</td>
+          <td style="text-align:right">{signups}</td>
           <td style="text-align:right"><b>{purchases}</b></td>
           <td style="text-align:right">{cvr}</td>
           <td style="text-align:right">{active_cnt}</td>
@@ -159,7 +169,7 @@ async def admin_referrals(period: str = "all", who: dict = Depends(verify)):
         </tr>"""
 
     if not rows:
-        rows = ('<tr><td colspan="12" style="text-align:center;color:#999;padding:24px">'
+        rows = ('<tr><td colspan="13" style="text-align:center;color:#999;padding:24px">'
                 f'{T["ref_empty"]}</td></tr>')
 
     def tab(key, label):
@@ -278,6 +288,7 @@ a.dl {{ color: #2E75B6; font-size: 12px; margin-right: 18px; }}
         <tr><th>{T['rth_code']}</th><th>{T['rth_channel']}</th><th>{T['rth_owner']}</th>
             <th>{T['rth_site']}</th>
             <th style="text-align:right">{T['rth_visits']}</th>
+            <th style="text-align:right">{T['rth_signups']}</th>
             <th style="text-align:right">{T['rth_purchases']}</th>
             <th style="text-align:right">{T['rth_cvr']}</th>
             <th style="text-align:right">{T['rth_active']}</th>
@@ -431,20 +442,24 @@ async def admin_referrals_csv(period: str = "all",
                               who: dict = Depends(verify)):
     d_from, d_to = _ref_period(period)
     stats = referral_stats(d_from, d_to)
+    free = free_signup_stats(d_from, d_to)   # v3.36 無料登録を購入から分ける
     rows = []
     for st in stats:
         visits = st["human_visits"] or 0
-        purchases = st["purchases"] or 0
+        fr = free.get(st["code"], {})
+        signups = fr.get("signups", 0)
+        purchases = max((st["purchases"] or 0) - signups, 0)
+        active_cnt = max((st["active_cnt"] or 0) - fr.get("active_free", 0), 0)
         rows.append([
             st["code"], st.get("channel") or "", st.get("owner") or "",
             site_label(st.get("site") or DEFAULT_SITE),
-            visits, (st["visits"] or 0) - visits, purchases,
+            visits, (st["visits"] or 0) - visits, signups, purchases,
             (f"{(purchases / visits * 100):.1f}" if visits else ""),
-            st["active_cnt"] or 0, _ref_mrr(st.get("active_plans")),
+            active_cnt, _ref_mrr(st.get("active_plans")),
             "有効" if st["is_active"] else "停止中",
             st.get("note") or "",
         ])
-    header = ["コード", "種別", "担当者", "着地先", "訪問（人）", "訪問（bot）", "購入",
+    header = ["コード", "種別", "担当者", "着地先", "訪問（人）", "訪問（bot）", "無料登録", "購入",
               "転換率(%)", "継続中", "MRR(USD)", "状態", "メモ"]
     name = f"referrals_{period}_{datetime.now().strftime('%Y%m%d')}.csv"
     return _csv_response(rows, header, name)

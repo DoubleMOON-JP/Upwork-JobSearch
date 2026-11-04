@@ -55,6 +55,8 @@ PLAN_TEXT_EN = {
     "1month_pro": ("Pro",   300),
     # 無料トライアル（v3.33）。顧客向け表記は「Trial」。
     "trial":      ("Trial",  10),
+    # 無料公開（v3.36）。顧客向け表記は「Free」。
+    "free":       ("Free",  100),
 }
 
 
@@ -86,10 +88,20 @@ def plan_name_en(plan: str) -> str:
     return PLAN_TEXT_EN.get(plan, ("Standard", 100))[0]
 
 
+def mask_email(addr: str) -> str:
+    """ログ用にメールアドレスの一部を伏せる（v3.36）。例: koji@example.com → k***@example.com
+    ログが漏れても、宛先の一覧として使えないようにするため。"""
+    addr = (addr or "").strip()
+    local, sep, domain = addr.partition("@")
+    if not sep:
+        return "***"
+    return f"{local[:1]}***@{domain}"
+
+
 def _send(to_email: str, subject: str, body: str) -> bool:
     """1通送る。成功なら True。例外は出さず False を返す。"""
     if not is_configured():
-        log.warning("mailer not configured; skipped sending to %s", to_email)
+        log.warning("mailer not configured; skipped sending to %s", mask_email(to_email))
         return False
     if not to_email:
         log.warning("no recipient address; skipped")
@@ -120,11 +132,11 @@ def _send(to_email: str, subject: str, body: str) -> bool:
                 smtp.ehlo()
                 smtp.login(SMTP_USER, SMTP_PASSWORD)
                 smtp.send_message(msg)
-        log.info("mail sent to %s (%s)", to_email, subject)
+        log.info("mail sent to %s (%s)", mask_email(to_email), subject)
         return True
     except Exception as e:
         # 送信失敗でWebhookを落とさない。運営者が管理画面から手動送付する。
-        log.error("mail send failed to %s: %s", to_email, e)
+        log.error("mail send failed to %s: %s", mask_email(to_email), e)
         return False
 
 
@@ -170,6 +182,42 @@ def _trial_body(license_key: str) -> str:
     return "\n".join(lines)
 
 
+# ── 無料公開用の案内（v3.36）──────────────────────────────
+# トライアルと違い課金は発生しないので、有効期限の日付をそのまま書いてよい。
+def _free_body(license_key: str, expires_at: str | None) -> str:
+    lines = [
+        "Thanks for signing up for MOONpicker.",
+        "",
+        "Your licence key:",
+        f"    {license_key}",
+        "",
+        "Plan: Free — 100 job evaluations per month",
+    ]
+    if expires_at:
+        lines.append(f"Free until: {expires_at}")
+    lines += [
+        "",
+        "One evaluation scores a whole page of search results at once, so paste in",
+        "everything you are considering rather than one job at a time.",
+        "",
+        "How to start",
+        f"  1. Open {BASE_URL}/app/upwork  (or {BASE_URL}/app/freelancer)",
+        "  2. Paste the licence key on the sign-in screen and accept the privacy policy.",
+        "  3. Fill in your profile (skills, minimum rate, keywords). It is stored in your",
+        "     own browser, not on our servers.",
+        "  4. Copy your job search results, paste them in, and every listing comes back",
+        "     scored 0-100 with a verdict and a reason.",
+        "",
+        "Keep this email. The key is how you sign in on a new device or browser.",
+        "",
+        f"Questions? Just reply to this email, or write to {SUPPORT_EMAIL}",
+        "",
+        "DoubleMoonTrading Co.",
+        BASE_URL,
+    ]
+    return "\n".join(lines)
+
+
 # ── ライセンスキーの送付（新規発行時） ─────────────────────
 def send_license_key(to_email: str, license_key: str, plan: str,
                      expires_at: str | None = None) -> bool:
@@ -178,6 +226,11 @@ def send_license_key(to_email: str, license_key: str, plan: str,
     if plan == "trial":
         return _send(to_email, "Your MOONpicker trial is ready",
                      _trial_body(license_key))
+    # 無料公開も同じ理由で本文を分ける（v3.36）。有料向けの「ご購読ありがとう」
+    # 「自動更新」「Polarで解約」は、無料登録の人には当てはまらないため。
+    if plan == "free":
+        return _send(to_email, "Your free MOONpicker licence key",
+                     _free_body(license_key, expires_at))
 
     subject = "Your MOONpicker licence key"
     lines = [

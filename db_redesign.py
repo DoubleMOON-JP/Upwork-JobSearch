@@ -889,3 +889,66 @@ def verify_staff(login_id: str, password: str) -> dict | None:
         return None
     return {"id": row["id"], "login_id": row["login_id"],
             "display_name": row["display_name"]}
+
+
+# ── 無料公開（v3.36）─────────────────────────────────────
+# signup.py（POST /signup）と紹介リンク管理から使う。既存の関数には手を入れていない。
+
+def find_active_license_by_email(email: str):
+    """そのメールアドレスで、いま有効なライセンスがあれば1件返す（大文字小文字は区別しない）。
+    無料登録で「1メールにつき1つ」を守るために使う。期限切れ・無効化済みは対象外なので、
+    過去に配った手動ライセンスなどが切れていれば、新しく無料キーを発行できる。"""
+    if not email:
+        return None
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT license_key, plan, expires_at
+                     FROM licenses
+                    WHERE LOWER(email) = LOWER(%s)
+                      AND status = 'active'
+                      AND expires_at >= CURRENT_DATE
+                    ORDER BY expires_at DESC
+                    LIMIT 1""",
+                (email,),
+            )
+            row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def free_signup_stats(date_from: str = None, date_to: str = None) -> dict:
+    """紹介コードごとの無料登録数。{code: {"signups": n, "active_free": m}}
+
+    referral_stats() は「紹介コード付きのライセンス」をすべて購入として数えるため、
+    無料登録がそのまま購入に混ざる。紹介リンク管理の画面ではこの値を差し引いて
+    「購入」と「無料登録」を分けて表示する（referral_stats 自体は変えない）。
+    signups は期間内の件数、active_free は現時点で有効な件数（購入・継続中と同じ考え方）。"""
+    where, params = ["l.ref_code IS NOT NULL", "l.plan = 'free'"], []
+    if date_from:
+        where.append("l.created_at >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("l.created_at < (%s::date + 1)")
+        params.append(date_to)
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""SELECT l.ref_code AS code, COUNT(*) AS signups
+                      FROM licenses l
+                     WHERE {' AND '.join(where)}
+                     GROUP BY l.ref_code""",
+                params,
+            )
+            out = {r["code"]: {"signups": r["signups"], "active_free": 0}
+                   for r in cur.fetchall()}
+            cur.execute(
+                """SELECT l.ref_code AS code, COUNT(*) AS active_free
+                     FROM licenses l
+                    WHERE l.ref_code IS NOT NULL AND l.plan = 'free'
+                      AND l.status = 'active' AND l.expires_at >= CURRENT_DATE
+                    GROUP BY l.ref_code"""
+            )
+            for r in cur.fetchall():
+                out.setdefault(r["code"], {"signups": 0, "active_free": 0})
+                out[r["code"]]["active_free"] = r["active_free"]
+    return out
