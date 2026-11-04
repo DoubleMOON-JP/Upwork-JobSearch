@@ -291,8 +291,18 @@
     .card{opacity:1; transform:none}
   }
 </style>
-</head>
-<body>
+<style>
+:root{--ink:#0B1F4B;--ink-soft:#475569;--paper:#F8FAFD;--surface:#fff;--line:#E2E8F0;--brand:#2563EB;--brand-dark:#1D4ED8;--radius:17px;--radius-sm:11px;--font-display:Inter,system-ui,sans-serif;--shadow:0 6px 24px rgba(11,31,75,.04)}
+*{box-sizing:border-box}body{margin:0;background:#F8FAFD;color:#15213B;font-family:Inter,system-ui,sans-serif;line-height:1.65}h1,h2,h3,h4{color:#0B1F4B}a{color:#2563EB}button,input,textarea{font:inherit}button,a,input,textarea,summary{outline-offset:4px}a:focus-visible,button:focus-visible{outline:3px solid #F5B942}.mp-side{position:fixed;inset:0 auto 0 0;width:230px;background:#fff;border-right:1px solid #E2E8F0;padding:28px 18px;display:flex;flex-direction:column;z-index:40;overflow:auto}.mp-side img{width:104px;height:104px;object-fit:contain;display:block;margin:0 auto 24px}.mp-side nav{display:grid;gap:5px}.mp-side nav a{color:#64748B;font-size:13px;font-weight:650;text-decoration:none;padding:12px 14px;border-radius:11px}.mp-side nav a.current,.mp-side nav a:hover{background:#F1F5FF;color:#2563EB}.mp-side small{font-weight:800;letter-spacing:.12em;color:#94A3B8;font-size:10px;margin:0 14px 12px}.mp-side .bottom{background:#F1F5FF;border-radius:13px;padding:15px;font-size:12px;color:#64748B;margin-top:auto}.mp-body{margin-left:230px;min-width:0}.mp-body header{background:#fff;color:#0B1F4B;border-bottom:1px solid #E2E8F0;box-shadow:none;padding:18px 30px;position:relative;min-height:72px}.mp-body header h1,.mp-body header h1 a{color:#0B1F4B!important}.mp-body header a{color:#2563EB}.mp-body header .brand .spark,.mp-body header>.spark{display:none}.mp-body header .tag{color:#64748B}.mp-body .wrap{max-width:1180px;padding-left:30px;padding-right:30px}.mp-body .hero{background:#F8FAFD}.mp-body .hero h2{font-size:clamp(30px,3.3vw,46px);letter-spacing:-1.3px;font-weight:800}.mp-body .hero h2 em{color:#2563EB}.mp-body .eyebrow{background:#F1F5FF;color:#2563EB;border-color:#DBEAFE}.mp-body .triage{background:#fff;border:1px solid #E2E8F0;border-radius:17px;padding:22px}.mp-body .hero-grid{gap:28px}.mp-body .card,.mp-body .panel,.mp-body .board,.mp-body .step,.mp-body .feat,.mp-body .price-card{border-radius:17px;box-shadow:0 6px 24px rgba(11,31,75,.04)}.mp-body .btn,.mp-body .cta{border-radius:11px}.mp-body .btn-primary{background:#2563EB;color:white}.mp-body .band{background:transparent}.mp-body .privacy{background:#F1F5FF;border-color:#DBEAFE}.mp-body .privacy h4,.mp-body .privacy p{color:#334155}.mp-body section{scroll-margin-top:20px}.mp-footer{padding:28px 30px!important;background:transparent!important;border-top:1px solid #E2E8F0;color:#64748B!important;font-size:12px;line-height:1.8}.mp-footer a{color:#2563EB!important;margin-right:18px}.mp-footer strong{color:#0B1F4B!important}.mp-footer .legal{color:#64748B!important}.mp-callout{padding:22px;background:#F1F5FF;border:1px solid #DBEAFE;border-radius:17px;margin:20px 0}.mp-callout h2{font-size:20px;margin:0 0 8px}.mp-form{max-width:620px;margin:45px auto;padding:32px;background:#fff;border:1px solid #E2E8F0;border-radius:17px}.mp-form label{display:block;font-size:13px;font-weight:700;margin:18px 0 7px}.mp-form input{width:100%;padding:13px;border:1px solid #CBD5E1;border-radius:10px}.mp-form button{margin-top:20px;padding:13px 20px;border:0;border-radius:11px;background:#2563EB;color:white;cursor:pointer}.mp-form .check{display:flex;gap:10px;align-items:flex-start;font-weight:400}.mp-form .check input{width:auto;margin-top:6px}.mp-form p{color:#64748B}.hidden,[hidden]{display:none!important}.mp-body .grid{gap:20px}.mp-body input,.mp-body textarea{border-radius:10px}.mp-body .reason{background:#F1F5FF;border-radius:9px;padding:12px}.mp-body .score{font-weight:800}.mp-body .trial-band[hidden]{display:none!important}
+@media(max-width:1050px){.mp-side{width:190px}.mp-body{margin-left:190px}.mp-body .hero-grid,.mp-body .grid{grid-template-columns:1fr}.mp-body .steps{grid-template-columns:1fr}}
+@media(max-width:700px){.mp-side{position:static;width:100%;display:block;padding:14px;border-bottom:1px solid #E2E8F0}.mp-side img{width:62px;height:62px;margin-bottom:8px}.mp-side small,.mp-side .bottom{display:none}.mp-side nav{display:flex;flex-wrap:wrap;justify-content:center}.mp-side nav a{font-size:11px;padding:7px}.mp-body{margin-left:0}.mp-body .wrap{padding:0 18px}.mp-body header{padding:14px 18px;flex-wrap:wrap}.mp-body .feats,.mp-body .price-grid,.mp-body .boards{grid-template-columns:1fr}.mp-form{margin:24px 16px;padding:22px}.mp-footer{padding:24px 18px!important}.mp-body .row2{grid-template-columns:1fr}.mp-body .hero h2{font-size:33px}}
+
+:root{--font-display:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;--font-body:Inter,system-ui,-apple-system,'Segoe UI',sans-serif}body,button,input,textarea,select{font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif}.a-samples{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.a-sample{padding:22px;border:1px solid #E2E8F0;border-radius:17px;background:white}.a-sample b{display:block;font-size:26px}.a-sample p{font-size:13px;color:#64748B}@media(max-width:800px){.a-samples{grid-template-columns:1fr}}  /* sample cards: place each part explicitly so the reason uses the wide column */
+  .cards .card .title{grid-column:1; grid-row:1}
+  .cards .card .why{grid-column:1; grid-row:2}
+  .cards .card .score{grid-column:2; grid-row:1 / span 2}
+</style></head>
+<body><aside class="mp-side"><a href="/"><img src="/static/logo.png" alt="MOONpicker"></a><small>SMART JOB SEARCH</small><nav><a class="" href="/">Home</a><a class="" href="/for/upwork">For Upwork</a><a class="current" href="/for/freelancer">For Freelancer.com</a><a class="" href="/app/upwork">Open the app</a><a class="" href="/signup">Free registration</a><a class="" href="/campaign">Share MOONpicker</a><a class="" href="/privacy">Privacy Policy</a></nav><div class="bottom"><b>Smart job search.</b><p>Better choices start with better information.</p></div></aside><div class="mp-body">
 
 <header>
   <span class="spark">⚡</span>
@@ -301,7 +311,7 @@
   <nav>
     <a href="#demo" class="plain">Demo</a>
     <a href="#how" class="plain">How it works</a>
-    <a href="#pricing" class="plain">Pricing</a>
+    <a href="/signup" class="plain">Get started free</a>
     <a href="/app/freelancer" class="cta">Open the app</a>
   </nav>
 </header>
@@ -317,8 +327,8 @@
         bid count weighed, with a one-line reason for each score.
         Apply, Maybe, or Skip, sorted for you.
       </p>
-      <div class="hero-actions">
-        <a class="btn btn-primary" href="#pricing">See pricing</a>
+      <p class="hero-note"><strong>Free through December 31, 2026.</strong> The free period may be extended. Get your licence key by email.</p><div class="hero-actions">
+        <a class="btn btn-primary" href="/signup">Get your free licence key</a>
         <a class="btn btn-ghost" href="#how">How it works</a>
       </div>
       <p class="hero-note">No browser extension. No Freelancer.com login. Nothing to install.</p>
@@ -339,22 +349,22 @@ Registered Users &nbsp; Copyright ©
 
       <div class="arrow">Scored against your profile</div>
 
-      <p class="triage-label">What you get back</p>
+      <p class="triage-label">Illustrative results · 0–100 scores · Highest first</p>
       <div class="cards">
         <div class="card apply">
           <div class="title">Python automation for data entry</div>
           <div class="why">Budget clears your rate and only 9 bids in so far.</div>
-          <div class="score">92<small>Apply</small></div>
+          <div class="score">95<small>Apply</small></div>
         </div>
         <div class="card maybe">
           <div class="title">FastAPI backend for a small dashboard</div>
           <div class="why">Strong skill match, but the budget is thin for the scope described.</div>
-          <div class="score">61<small>Maybe</small></div>
+          <div class="score">62<small>Maybe</small></div>
         </div>
         <div class="card skip">
           <div class="title">Insta-Mart delivery app &amp; web</div>
           <div class="why">Average bid is four times the budget &mdash; about $17 for the whole app.</div>
-          <div class="score">24<small>Skip</small></div>
+          <div class="score">31<small>Skip</small></div>
         </div>
       </div>
     </div>
@@ -370,12 +380,12 @@ Registered Users &nbsp; Copyright ©
     </div>
     <div class="demo">
       <video controls playsinline preload="metadata"
-             poster="/static/moonpicker_demo_poster.jpg" width="1280" height="720">
-        <source src="/static/moonpicker_demo.mp4" type="video/mp4" />
+             poster="https://moonpicker.com/static/moonpicker_demo_poster.jpg" width="1280" height="720">
+        <source src="https://moonpicker.com/static/moonpicker_demo.mp4" type="video/mp4" />
         Your browser can&rsquo;t play this video.
         <a href="/static/moonpicker_demo.mp4">Download it instead</a>.
       </video>
-      <p class="demo-note">No sound. Recorded on the author&rsquo;s own Upwork account on the Basic plan &mdash; the monthly allowance shown on screen is the plan sold below. A Freelancer.com recording will replace it.</p>
+      <p class="demo-note">Existing product walkthrough. Interface colours may differ from this redesign.</p>
     </div>
   </div>
 </section>
@@ -385,22 +395,22 @@ Registered Users &nbsp; Copyright ©
     <div class="sec-head">
       <p class="kicker">How it works</p>
       <h3>Three steps, about a minute.</h3>
-      <p>You stay on Freelancer.com the whole time. Nothing connects to your account and nothing runs in the background.</p>
+      <p>Copy the full results page from Freelancer.com, then paste it into MOONpicker. No job-board login or extension is needed.</p>
     </div>
     <div class="steps">
       <div class="step">
         <div class="n">1</div>
-        <h4>Describe yourself once</h4>
+        <h4>Set your preferences</h4>
         <p>Skills, minimum rate, keywords you want, keywords you don't. It's saved in your browser, so you fill it in once and forget it.</p>
       </div>
       <div class="step">
         <div class="n">2</div>
         <h4>Paste your search results</h4>
-        <p>Open Browse &rsaquo; Projects, select the page, copy, paste. Filters, footers and page numbers get stripped out automatically. One page at a time gives the most reliable results.</p>
+        <p>Open Browse &rsaquo; Projects. Copy the entire results page with Ctrl+A / Cmd+A, then Ctrl+C / Cmd+C, and paste it into MOONpicker. Every listing is scored together; menus, banners and footers are removed automatically.</p>
       </div>
       <div class="step">
         <div class="n">3</div>
-        <h4>Work the top of the list</h4>
+        <h4>Review top scoring jobs</h4>
         <p>Every project comes back with a score, a verdict, and the reason behind it — sorted highest first. Export to CSV when you want to keep a record.</p>
       </div>
     </div>
@@ -440,8 +450,8 @@ Registered Users &nbsp; Copyright ©
     <div class="privacy">
       <div class="mark">🔒</div>
       <div>
-        <h4>Your profile never leaves your browser</h4>
-        <p>Skills, rate and keywords are stored in your browser's local storage — not on our servers. Clear your browser data and they're gone.</p>
+        <h4>Your preferences are saved in your browser</h4>
+        <p>Your saved preferences stay in this browser. When you evaluate jobs, your preferences and pasted job text are sent for scoring. Clear your browser data to remove locally saved preferences.</p>
         <p>Project text you paste is sent for scoring and is not retained afterwards. We never ask for your Freelancer.com password and the service never signs in to Freelancer.com on your behalf.</p>
       </div>
     </div>
@@ -475,10 +485,10 @@ Registered Users &nbsp; Copyright ©
 </section>
 <!-- ===== TRIAL BAND END ===== -->
 
-<section id="pricing">
+<section id="pricing" hidden>
   <div class="wrap">
     <div class="sec-head">
-      <p class="kicker">Pricing</p>
+      <p class="kicker">Paid plans</p>
       <h3>Two plans. Cancel whenever.</h3>
       <p>Roughly the price of a single hour billed at your own rate — for a month of not wasting them. One licence covers every job board we support.</p>
     </div>
@@ -527,14 +537,14 @@ Registered Users &nbsp; Copyright ©
       <p class="kicker">Questions</p>
       <h3>Before you sign up.</h3>
     </div>
-    <div class="faq">
+    <div class="faq"><details><summary>Which platforms are supported?</summary><p>Upwork and Freelancer.com.</p></details><details><summary>Is MOONpicker free?</summary><p>Free through December 31, 2026. The free period may be extended. Register with your email to receive a licence key.</p></details><details><summary>Does MOONpicker apply for me?</summary><p>No. MOONpicker never submits proposals and never signs in to your job board account. You decide and apply yourself.</p></details>
       <details>
         <summary>Does this break Freelancer.com's terms of service?</summary>
         <p>No. There is no extension, no scraping and no automated access to Freelancer.com. You copy text yourself, the same way you would copy it into a notes app, and paste it here. Your Freelancer.com account is never touched.</p>
       </details>
       <details>
         <summary>What counts as one evaluation?</summary>
-        <p>One project scored. A page of Freelancer.com results holds 20 projects, so scoring a full page uses 20 of your monthly allowance.</p>
+        <p>For details about how evaluations are counted, contact moonpicker_support@doublemoon.biz.</p>
       </details>
       <details>
         <summary>My budgets are in rupees, not dollars. Does that work?</summary>
@@ -554,28 +564,13 @@ Registered Users &nbsp; Copyright ©
       </details>
       <details>
         <summary>How do I get my license key?</summary>
-        <p>It's emailed to you as soon as the payment clears. Enter it once on the app's login screen and you're in.</p>
+        <p>Your licence key is sent by email after registration. Enter it on the app’s licence-key screen to begin.</p>
       </details>
     </div>
   </div>
 </section>
 
-<footer>
-  <div class="wrap cols">
-    <a href="/"><strong style="color:#fff; font-family:var(--font-display)">MOONpicker</strong></a>
-    <a href="/">All boards</a>
-    <a href="#how">How it works</a>
-    <a href="#pricing">Pricing</a>
-    <a href="/campaign">Share &amp; get a free month</a>
-    <a href="/privacy">Privacy</a>
-    <a href="mailto:moonpicker_support@doublemoon.biz">moonpicker_support@doublemoon.biz</a>
-    <p class="legal">
-      DoubleMoon Trading Co., Ltd. — Yashio, Saitama, Japan.<br />
-      Freelancer is a registered trademark of Freelancer Technology Pty Limited. This service is
-      independent and not affiliated with, endorsed by, or sponsored by Freelancer.com.
-    </p>
-  </div>
-</footer>
+
 
 <script>
 "use strict";
@@ -660,5 +655,5 @@ Registered Users &nbsp; Copyright ©
 })();
 </script>
 
-</body>
+<footer class="mp-footer"><a href="/privacy">Privacy Policy</a><a href="mailto:moonpicker_support@doublemoon.biz">Support Email</a><p><strong>DoubleMoon Trading Co., Ltd.</strong><br>Yashio, Saitama, Japan</p><p>Upwork is a trademark of Upwork Global Inc. This service is independent and not affiliated with, endorsed by, or sponsored by Upwork.</p></footer></div></body>
 </html>

@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MOONpicker — AI job triage</title>
+<title>MOONpicker — Evaluate Search Results</title>
 
 <!-- 同一オリジンのFastAPIが配信する前提。別ホストで配信する場合は下の API_BASE を変更 -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
 <style>
   :root{
@@ -21,8 +21,8 @@
     --muted:#6B7280; --danger:#B42318; --danger-bg:#FCEBE9;
     --radius:14px; --radius-sm:9px;
     --shadow:0 1px 2px rgba(22,35,63,.06), 0 8px 24px rgba(22,35,63,.06);
-    --font-display:"Space Grotesk", system-ui, sans-serif;
-    --font-body:"Inter", system-ui, sans-serif;
+    --font-display:Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-body:Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
   *{box-sizing:border-box}
   html,body{margin:0}
@@ -218,14 +218,23 @@
 
   @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important} }
 </style>
-</head>
-<body>
+<style>
+:root{--ink:#0B1F4B;--ink-soft:#475569;--paper:#F8FAFD;--surface:#fff;--line:#E2E8F0;--brand:#2563EB;--brand-dark:#1D4ED8;--radius:17px;--radius-sm:11px;--font-display:Inter,system-ui,sans-serif;--shadow:0 6px 24px rgba(11,31,75,.04)}
+*{box-sizing:border-box}body{margin:0;background:#F8FAFD;color:#15213B;font-family:Inter,system-ui,sans-serif;line-height:1.65}h1,h2,h3,h4{color:#0B1F4B}a{color:#2563EB}button,input,textarea{font:inherit}button,a,input,textarea,summary{outline-offset:4px}a:focus-visible,button:focus-visible{outline:3px solid #F5B942}.mp-side{position:fixed;inset:0 auto 0 0;width:230px;background:#fff;border-right:1px solid #E2E8F0;padding:28px 18px;display:flex;flex-direction:column;z-index:40;overflow:auto}.mp-side img{width:104px;height:104px;object-fit:contain;display:block;margin:0 auto 24px}.mp-side nav{display:grid;gap:5px}.mp-side nav a{color:#64748B;font-size:13px;font-weight:650;text-decoration:none;padding:12px 14px;border-radius:11px}.mp-side nav a.current,.mp-side nav a:hover{background:#F1F5FF;color:#2563EB}.mp-side small{font-weight:800;letter-spacing:.12em;color:#94A3B8;font-size:10px;margin:0 14px 12px}.mp-side .bottom{background:#F1F5FF;border-radius:13px;padding:15px;font-size:12px;color:#64748B;margin-top:auto}.mp-body{margin-left:230px;min-width:0}.mp-body header{background:#fff;color:#0B1F4B;border-bottom:1px solid #E2E8F0;box-shadow:none;padding:18px 30px;position:relative;min-height:72px}.mp-body header h1,.mp-body header h1 a{color:#0B1F4B!important}.mp-body header a{color:#2563EB}.mp-body header .brand .spark,.mp-body header>.spark{display:none}.mp-body header .tag{color:#64748B}.mp-body .wrap{max-width:1180px;padding-left:30px;padding-right:30px}.mp-body .hero{background:#F8FAFD}.mp-body .hero h2{font-size:clamp(30px,3.3vw,46px);letter-spacing:-1.3px;font-weight:800}.mp-body .hero h2 em{color:#2563EB}.mp-body .eyebrow{background:#F1F5FF;color:#2563EB;border-color:#DBEAFE}.mp-body .triage{background:#fff;border:1px solid #E2E8F0;border-radius:17px;padding:22px}.mp-body .hero-grid{gap:28px}.mp-body .card,.mp-body .panel,.mp-body .board,.mp-body .step,.mp-body .feat,.mp-body .price-card{border-radius:17px;box-shadow:0 6px 24px rgba(11,31,75,.04)}.mp-body .btn,.mp-body .cta{border-radius:11px}.mp-body .btn-primary{background:#2563EB;color:white}.mp-body .band{background:transparent}.mp-body .privacy{background:#F1F5FF;border-color:#DBEAFE}.mp-body .privacy h4,.mp-body .privacy p{color:#334155}.mp-body section{scroll-margin-top:20px}.mp-footer{padding:28px 30px!important;background:transparent!important;border-top:1px solid #E2E8F0;color:#64748B!important;font-size:12px;line-height:1.8}.mp-footer a{color:#2563EB!important;margin-right:18px}.mp-footer strong{color:#0B1F4B!important}.mp-footer .legal{color:#64748B!important}.mp-callout{padding:22px;background:#F1F5FF;border:1px solid #DBEAFE;border-radius:17px;margin:20px 0}.mp-callout h2{font-size:20px;margin:0 0 8px}.mp-form{max-width:620px;margin:45px auto;padding:32px;background:#fff;border:1px solid #E2E8F0;border-radius:17px}.mp-form label{display:block;font-size:13px;font-weight:700;margin:18px 0 7px}.mp-form input{width:100%;padding:13px;border:1px solid #CBD5E1;border-radius:10px}.mp-form button{margin-top:20px;padding:13px 20px;border:0;border-radius:11px;background:#2563EB;color:white;cursor:pointer}.mp-form .check{display:flex;gap:10px;align-items:flex-start;font-weight:400}.mp-form .check input{width:auto;margin-top:6px}.mp-form p{color:#64748B}.hidden,[hidden]{display:none!important}.mp-body .grid{gap:20px}.mp-body input,.mp-body textarea{border-radius:10px}.mp-body .reason{background:#F1F5FF;border-radius:9px;padding:12px}.mp-body .score{font-weight:800}.mp-body .trial-band[hidden]{display:none!important}
+@media(max-width:1050px){.mp-side{width:190px}.mp-body{margin-left:190px}.mp-body .hero-grid,.mp-body .grid{grid-template-columns:1fr}.mp-body .steps{grid-template-columns:1fr}}
+@media(max-width:700px){.mp-side{position:static;width:100%;display:block;padding:14px;border-bottom:1px solid #E2E8F0}.mp-side img{width:62px;height:62px;margin-bottom:8px}.mp-side small,.mp-side .bottom{display:none}.mp-side nav{display:flex;flex-wrap:wrap;justify-content:center}.mp-side nav a{font-size:11px;padding:7px}.mp-body{margin-left:0}.mp-body .wrap{padding:0 18px}.mp-body header{padding:14px 18px;flex-wrap:wrap}.mp-body .feats,.mp-body .price-grid,.mp-body .boards{grid-template-columns:1fr}.mp-form{margin:24px 16px;padding:22px}.mp-footer{padding:24px 18px!important}.mp-body .row2{grid-template-columns:1fr}.mp-body .hero h2{font-size:33px}}
+
+:root{--font-display:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;--font-body:Inter,system-ui,-apple-system,'Segoe UI',sans-serif}body,button,input,textarea,select{font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif}.a-samples{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.a-sample{padding:22px;border:1px solid #E2E8F0;border-radius:17px;background:white}.a-sample b{display:block;font-size:26px}.a-sample p{font-size:13px;color:#64748B}@media(max-width:800px){.a-samples{grid-template-columns:1fr}}</style><style>
+:root{--font-display:Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;--font-body:Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;}
+body, button, input, select, textarea{font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;}
+</style></head>
+<body><aside class="mp-side"><a href="/"><img src="/static/logo.png" alt="MOONpicker"></a><small>SMART JOB SEARCH</small><nav><a class="" href="/">Home</a><a class="" href="/for/upwork">For Upwork</a><a class="" href="/for/freelancer">For Freelancer.com</a><a class="current" href="/app/upwork">Open the app</a><a class="" href="/signup">Free registration</a><a class="" href="/campaign">Share MOONpicker</a><a class="" href="/privacy">Privacy Policy</a></nav><div class="bottom"><b>Smart job search.</b><p>Better choices start with better information.</p></div></aside><div class="mp-body">
 
 <header>
   <div class="brand">
     <span class="spark">⚡</span>
     <h1><a href="/" style="color:inherit;text-decoration:none">MOONpicker</a></h1>
-    <span class="tag">AI job triage</span>
+    <span class="tag">Job evaluation</span>
   </div>
   <span id="licChip" class="lic-chip hidden"></span>
   <button id="signOut" class="link-btn hidden">Sign out</button>
@@ -257,7 +266,7 @@
 </section>
 
 <!-- ══════════ APP ══════════ -->
-<main id="appView" class="hidden">
+<main id="appView" class="hidden"><div class="mp-callout"><h2>Set your preferences → Paste your search results → Review top scoring jobs</h2><p>Copy the whole search results page with Ctrl/⌘+A, then Ctrl/⌘+C. Paste it below to score all loaded listings together. Menus, banners, and footers are removed automatically.</p></div>
   <div class="grid">
 
     <!-- LEFT: inputs -->
@@ -304,7 +313,7 @@
               <textarea id="p_ai_request" rows="2" placeholder="Prioritize newly posted, verified clients."></textarea>
             </div>
             <button id="saveProfile" class="btn btn-ghost">Save profile</button>
-            <p class="hint">Used to score every job. Saved on this device only.</p>
+            <p class="hint">Saved in this browser. Your preferences and pasted job text are sent for scoring when you evaluate. Job text is not retained afterwards.</p>
           </div>
         </details>
       </div>
@@ -327,7 +336,7 @@
               <input id="threshold" type="number" min="0" max="100" value="60" />
             </div>
             <button id="evalBtn" class="btn btn-primary" style="justify-content:center; height:42px">
-              <span id="evalLabel">Score these jobs</span>
+              <span id="evalLabel">Evaluate Search Results</span>
             </button>
           </div>
           <div id="evalMsg" class="msg msg-warn hidden"></div>
@@ -353,14 +362,14 @@
       <div class="panel" style="min-height:320px">
       <div class="panel-head">
         <span class="eyebrow">Results</span>
-        <h2 style="flex:1">Triage board</h2>
+        <h2 style="flex:1">Top scoring jobs</h2>
       </div>
       <div class="panel-body">
         <div id="summary" class="summary hidden"></div>
         <div id="results"></div>
         <div id="emptyState" class="empty">
           <div class="big">No jobs scored yet</div>
-          <div>Paste listings on the left and press “Score these jobs”.</div>
+          <div>Paste listings on the left and press “Evaluate Search Results”.</div>
         </div>
       </div>
       </div>
@@ -447,7 +456,7 @@ async function doLogin(key, silent){
     const data = await res.json();
     if(!res.ok || data.status !== "valid"){
       store.del("ujs_license");
-      showLoginMsg((data && data.message) ? data.message : "License is not valid.");
+      showLoginMsg("This licence key could not be verified. Check the key, or contact support if it has expired.");
       return;
     }
     const lic = data.license || {};
@@ -583,8 +592,8 @@ async function runEvaluate(){
         // 画面側でカウントダウンはしない（動くと処理中に見えるため）。
         const sec = d.retry_after_sec;
         showEvalMsg(
-          sec ? `Not scored — you pressed too soon. Wait about ${sec} more seconds, then press “Score these jobs” again.`
-              : (d.message || "Not scored — you pressed too soon. Wait a moment, then press “Score these jobs” again."),
+          sec ? `Not scored — you pressed too soon. Wait about ${sec} more seconds, then press “Evaluate Search Results” again.`
+              : (d.message || "Not scored — you pressed too soon. Wait a moment, then press “Evaluate Search Results” again."),
           "error");
       }
       return;
@@ -607,7 +616,7 @@ async function runEvaluate(){
 function setEvalLoading(on){
   const b=$("evalBtn"), l=$("evalLabel");
   b.disabled=on;
-  l.innerHTML = on ? '<span class="spinner"></span> Scoring…' : 'Score these jobs';
+  l.innerHTML = on ? '<span class="spinner"></span> Scoring…' : 'Evaluate Search Results';
 }
 // level: "error" なら赤、省略時は従来どおり黄色（注意）
 function showEvalMsg(t, level){
@@ -670,7 +679,7 @@ function renderResults(data){
         <div class="job-main">
           <h3>${title}</h3>
           ${meta?`<div class="meta">${meta}</div>`:""}
-          ${skills?`<div class="skills">${skills}</div>`:""}
+          ${skills?`<div class="skills">${skills}</div>`:""}${(j.payment_verified != null || j.client_spend != null || j.proposals != null) ? `<div class="meta">${[j.payment_verified != null ? "Payment: " + (j.payment_verified ? "verified" : "not verified") : "", j.client_spend != null ? "Client spend: " + j.client_spend : "", j.proposals != null ? "Proposals: " + j.proposals : ""].filter(Boolean).map(esc).join(" · ")}</div>` : ""}
           ${j.reason?`<div class="reason"><b>Why:</b> ${esc(j.reason)}</div>`:""}
         </div>
       </article>`;
@@ -702,5 +711,5 @@ function triggerDownload(blob, name){
   a.remove(); URL.revokeObjectURL(url);
 }
 </script>
-</body>
+<footer class="mp-footer"><a href="/privacy">Privacy Policy</a><a href="mailto:moonpicker_support@doublemoon.biz">Support Email</a><p><strong>DoubleMoon Trading Co., Ltd.</strong><br>Yashio, Saitama, Japan</p><p>Upwork is a trademark of Upwork Global Inc. This service is independent and not affiliated with, endorsed by, or sponsored by Upwork.</p></footer></div></body>
 </html>
