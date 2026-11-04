@@ -54,7 +54,7 @@ from payments import router as payments_router  # 決済Webhook: POST /webhook/{
 # 「新しいコードが本当に載ったか」はこちらで判定する。
 # 環境変数が無い場合（ローカル起動など）は "unknown" を返す。
 # ここが "unknown" のままなら、環境変数名が違うということ。
-APP_VERSION = "3.34.0"
+APP_VERSION = "3.35.0"
 GIT_COMMIT = (
     os.environ.get("RENDER_GIT_COMMIT")
     or os.environ.get("GIT_COMMIT")
@@ -337,6 +337,22 @@ async def thanks_page():
             with open(path, encoding="utf-8") as f:
                 return HTMLResponse(content=f.read())
     return HTMLResponse(content="<h1>Not found</h1>", status_code=404)
+
+
+# ── 無料登録（v3.35）──────────────────────────────────────
+# 年内無料公開のための登録フォームと完了画面。
+# 受付API（POST /signup）は次の段階で追加する。それまではフォーム側の
+# SIGNUP_ENDPOINT が空のため、送信しても「まだ受け付けていない」と表示されるだけで
+# 何も送られない（signup.html のスクリプト参照）。
+@app.get("/signup", response_class=HTMLResponse)
+async def signup_page():
+    return _serve_html("frontend/signup.html", "signup.html")
+
+
+@app.get("/signup/complete", response_class=HTMLResponse)
+async def signup_complete_page():
+    # 受付APIが登録を受け付けた後にだけ遷移させる画面。
+    return _serve_html("frontend/signup_complete.html", "signup_complete.html")
 
 
 @app.get("/health")
