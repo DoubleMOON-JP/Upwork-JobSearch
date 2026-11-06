@@ -231,7 +231,9 @@ body, button, input, select, textarea{font-family: Inter, system-ui, -apple-syst
   .mp-body header .lic-chip{background:#F1F5FF;border:1px solid #DBEAFE;color:#475569}
   .mp-body header .lic-chip b{color:#0B1F4B}
 </style></head>
-<body><aside class="mp-side"><a href="/"><img src="/static/logo.png" alt="MOONpicker"></a><small>SMART JOB SEARCH</small><nav><a class="" href="/">Home</a><a class="" href="/for/upwork">For Upwork</a><a class="" href="/for/freelancer">For Freelancer.com</a><a class="current" href="/app/upwork">Open the app</a><a class="" href="/signup">Free registration</a><a class="" href="/campaign">Share MOONpicker</a><a class="" href="/privacy">Privacy Policy</a></nav><div class="bottom"><b>Smart job search.</b><p>Better choices start with better information.</p></div></aside><div class="mp-body">
+<body>
+<!-- 無料期間中はキャンペーン（/campaign）へのリンクを隠している（v3.36.2）。有料化したら data-campaign-link の付いた要素から hidden を外す。 -->
+<aside class="mp-side"><a href="/"><img src="/static/logo.png" alt="MOONpicker"></a><small>SMART JOB SEARCH</small><nav><a class="" href="/">Home</a><a class="" href="/for/upwork">For Upwork</a><a class="" href="/for/freelancer">For Freelancer.com</a><a class="current" href="/app/upwork">Open the app</a><a class="" href="/signup">Free registration</a><a class="" href="/campaign" hidden data-campaign-link>Share MOONpicker</a><a class="" href="/privacy">Privacy Policy</a></nav><div class="bottom"><b>Smart job search.</b><p>Better choices start with better information.</p></div></aside><div class="mp-body">
 
 <header>
   <div class="brand">
@@ -263,7 +265,7 @@ body, button, input, select, textarea{font-family: Inter, system-ui, -apple-syst
   </div>
   <div class="site-footer">
     <a href="/">All boards</a> ·
-    <a href="/campaign">Share &amp; get a free month</a> ·
+    <span hidden data-campaign-link><a href="/campaign">Share &amp; get a free month</a> ·</span>
     <a href="/privacy">Privacy Policy</a>
   </div>
 </section>
@@ -383,7 +385,7 @@ body, button, input, select, textarea{font-family: Inter, system-ui, -apple-syst
 
   <div class="site-footer">
     <a href="/">All boards</a> ·
-    <a href="/campaign">Share &amp; get a free month</a> ·
+    <span hidden data-campaign-link><a href="/campaign">Share &amp; get a free month</a> ·</span>
     <a href="/privacy">Privacy Policy</a>
   </div>
 </main>
