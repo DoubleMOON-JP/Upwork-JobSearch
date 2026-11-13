@@ -452,7 +452,7 @@ async def admin_resend_license(request: Request, who: dict = Depends(verify)):
             set_mail_status(key, "sent")
         except Exception as e:
             log.error("could not record mail status after resend: %s", e)
-        log.info("license key resent: %s to %s", key, lic["email"])
+        log.info("license key resent: %s to %s", key, mailer.mask_email(lic["email"]))   # v3.37 伏せ字
         return {"success": True, "email": lic["email"]}
 
     try:

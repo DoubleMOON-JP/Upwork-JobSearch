@@ -54,7 +54,7 @@ from payments import router as payments_router  # 決済Webhook: POST /webhook/{
 # 「新しいコードが本当に載ったか」はこちらで判定する。
 # 環境変数が無い場合（ローカル起動など）は "unknown" を返す。
 # ここが "unknown" のままなら、環境変数名が違うということ。
-APP_VERSION = "3.36.2"
+APP_VERSION = "3.37.0"
 GIT_COMMIT = (
     os.environ.get("RENDER_GIT_COMMIT")
     or os.environ.get("GIT_COMMIT")
@@ -84,7 +84,9 @@ app.include_router(payments_router)   # POST /webhook/{provider}  (例: /webhook
 
 # 環境変数
 ADMIN_USER     = os.environ.get("ADMIN_USER",     "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
+# v3.37：既定値 "changeme" を廃止。未設定（または changeme のまま）なら管理者ログインを受け付けない。
+# 環境変数はバックアップに含まれないため、Render を作り直すと消える。そのとき誰でも入れる状態を避ける。
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 BASE_URL       = os.environ.get("BASE_URL",       "https://jobsearch.doublemoon.biz")
 
 # 旧ドメイン。アクセスが来たら BASE_URL 側へ恒久リダイレクトする。
@@ -102,16 +104,57 @@ security = HTTPBasic()
 # 場所に置く必要があったため。main.py は紹介リンク管理などで引き続き使う。
 from admin_ui import esc
 
+# ── セキュリティ対策（v3.37）──────────────────────────────
+# 判定ロジックは security.py（FastAPIに依存しない形で置き、単体テストしている）。
+from security import (
+    admin_password_usable, allowed_hosts, is_cross_site_write,
+    LoginThrottle, SECURITY_HEADERS,
+)
+
+_login_throttle = LoginThrottle()   # ログイン失敗の記録（メモリのみ。DB・ログには残さない）
+
+if not admin_password_usable(ADMIN_PASSWORD):
+    log.warning("ADMIN_PASSWORD is not set (or still 'changeme'); "
+                "administrator sign-in is disabled until it is set in Render.")
+
+
 def _identify(credentials: HTTPBasicCredentials) -> dict | None:
+    """ログイン失敗回数の制限をかけたうえで、資格情報から「誰か」を判定する（v3.37）。
+
+    同じログインIDで15分以内に10回失敗すると、15分間そのIDのログインを止める（429）。
+    止めている間は正しいパスワードでも通さない。429 には WWW-Authenticate を付けない
+    （付けるとブラウザがパスワード入力を繰り返し求め、待つべきことが伝わらないため）。
+    """
+    login_id = credentials.username or ""
+    left = _login_throttle.locked_for(login_id)
+    if left:
+        raise HTTPException(
+            status_code=429,
+            detail=(f"Too many failed sign-in attempts. Please try again in about "
+                    f"{max(1, (left + 59) // 60)} minutes. "
+                    f"（ログインの失敗が続いたため一時的に止めています。約{max(1, (left + 59) // 60)}分後に再度お試しください）"),
+            headers={"Retry-After": str(left)},
+        )
+    who = _check_credentials(credentials)
+    if who:
+        _login_throttle.record_success(login_id)
+    else:
+        _login_throttle.record_failure(login_id)
+    return who
+
+
+def _check_credentials(credentials: HTTPBasicCredentials) -> dict | None:
     """Basic認証の資格情報から「誰か」を判定する。判定できなければ None。
 
     管理者は環境変数、スタッフは staff_members テーブルと照合する。
     フォーム認証やセッションは導入していない（画面もCookieも不要で、
     既存の全ルートを書き換えずに済むため）。その代わりログアウトはできない。
+    v3.37：ADMIN_PASSWORD が未設定・既定値のときは管理者として照合しない。
     """
     try:
         ok_user = sec_module.compare_digest(credentials.username, ADMIN_USER)
-        ok_pass = sec_module.compare_digest(credentials.password, ADMIN_PASSWORD)
+        ok_pass = (admin_password_usable(ADMIN_PASSWORD)
+                   and sec_module.compare_digest(credentials.password, ADMIN_PASSWORD))
     except TypeError:
         # compare_digest は非ASCIIの str を受け付けない。
         # 管理者IDは英数字なので、この時点で管理者ではないと判断してよい。
@@ -182,6 +225,35 @@ async def redirect_legacy_hosts(request: Request, call_next):
         code = 301 if request.method in ("GET", "HEAD") else 308
         return RedirectResponse(url, status_code=code)
     return await call_next(request)
+
+
+@app.middleware("http")
+async def security_guard(request: Request, call_next):
+    """v3.37：管理画面の書き込み操作の送信元チェック（CSRF対策）と、セキュリティヘッダーの付与。
+
+    /admin・/staff への POST 等は、Origin（無ければ Referer）が自サイトでなければ 403 で止める。
+    Basic認証はブラウザが他サイトからのリクエストにも資格情報を付けるため、
+    ログインしたままのブラウザで悪意のあるページを開くと操作されるおそれがあった。
+    判定の中身は security.is_cross_site_write を参照。
+    後から登録したミドルウェアほど外側で動くため、旧ドメインのリダイレクト応答にもヘッダーが付く。
+    """
+    origin = request.headers.get("origin")
+    referer = request.headers.get("referer")
+    hosts = allowed_hosts(BASE_URL, request.headers.get("host", ""))
+    if is_cross_site_write(request.method, request.url.path, origin, referer, hosts):
+        # 送信元はホスト名だけを記録する（Referer のパスや ?ref= などは残さない）
+        from urllib.parse import urlsplit
+        src = urlsplit(origin or referer or "").netloc or (origin or "?")
+        log.warning("blocked cross-site write: %s %s from %s", request.method, request.url.path, src)
+        response = JSONResponse(
+            status_code=403,
+            content={"message": "Blocked: this request did not come from the MOONpicker admin pages. "
+                                "（管理画面以外から送られた操作のため止めました）"})
+    else:
+        response = await call_next(request)
+    for name, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
 
 
 def _serve_html(*candidates: str, fallback: str = "<h1>Not found</h1>",

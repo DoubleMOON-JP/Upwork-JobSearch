@@ -422,7 +422,9 @@ def delete_license(license_key: str) -> dict:
             cur.execute("DELETE FROM usage_tracking WHERE license_key = %s", (license_key,))
             cur.execute("DELETE FROM licenses WHERE license_key = %s", (license_key,))
 
-    print(f"[admin] license deleted: {license_key} ({row['email']})")
+    # v3.37：ログにはメールアドレスの一部だけを出す（mailer.mask_email と同じ形）
+    from mailer import mask_email
+    print(f"[admin] license deleted: {license_key} ({mask_email(row['email'])})")
     return {'success': True, 'license_key': license_key, 'email': row['email']}
 
 
@@ -452,8 +454,9 @@ def delete_expired_licenses(older_than_days: int = 30) -> dict:
                             (row['license_key'],))
                 deleted.append({'license_key': row['license_key'], 'email': row['email']})
 
+    from mailer import mask_email   # v3.37：ログのメールアドレスは一部を伏せる
     for d in deleted:
-        print(f"[admin] license deleted (bulk): {d['license_key']} ({d['email']})")
+        print(f"[admin] license deleted (bulk): {d['license_key']} ({mask_email(d['email'])})")
     return {'success': True, 'deleted_count': len(deleted), 'deleted': deleted,
             'skipped_count': len(candidates) - len(deleted)}
 
