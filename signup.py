@@ -16,7 +16,7 @@
 #                    再起動前に開いていたフォームは「再読み込みしてください」になる。
 #   SIGNUP_ENABLED   任意。0 / false / off にすると受付を止める（デプロイ不要の停止スイッチ）。
 #                    既定は受付中。
-#   FREE_PERIOD_END  任意。無料ライセンスの有効期限（YYYY-MM-DD）。既定 2026-12-31。
+#   FREE_PERIOD_END  任意。無料ライセンスの有効期限（YYYY-MM-DD）。既定 2027-01-31（v3.37.1 で 2026-12-31 から変更）。
 #                    延長するときは、ここを変えると「これから登録する人」の期限が変わる。
 #                    登録済みの人の期限は変わらない（別途まとめて延長する）。
 #
@@ -72,12 +72,12 @@ def signup_enabled() -> bool:
 
 
 def free_period_end() -> date:
-    raw = os.environ.get("FREE_PERIOD_END", "2026-12-31").strip()
+    raw = os.environ.get("FREE_PERIOD_END", "2027-01-31").strip()
     try:
         return date.fromisoformat(raw)
     except ValueError:
-        log.error("FREE_PERIOD_END is not a valid date (%r); falling back to 2026-12-31", raw)
-        return date(2026, 12, 31)
+        log.error("FREE_PERIOD_END is not a valid date (%r); falling back to 2027-01-31", raw)
+        return date(2027, 1, 31)
 
 
 # ── フォームのトークン（開いた時刻＋署名。何も保存しない）────────
